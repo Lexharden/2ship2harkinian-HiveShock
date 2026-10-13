@@ -49,6 +49,7 @@ void EnRd_Pirouette(EnRd* this, PlayState* play);
 void EnRd_EndPirouetteWhenPlayerIsClose(EnRd* this, PlayState* play);
 void EnRd_SetupRiseFromCoffin(EnRd* this);
 void EnRd_RiseFromCoffin(EnRd* this, PlayState* play);
+void EnRd_SetupWalkToPlayer(EnRd* this, PlayState* play);
 void EnRd_WalkToPlayer(EnRd* this, PlayState* play);
 void EnRd_SetupWalkToHome(EnRd* this, PlayState* play);
 void EnRd_WalkToHome(EnRd* this, PlayState* play);
@@ -187,6 +188,9 @@ static InitChainEntry sInitChain[] = {
 void EnRd_Init(Actor* thisx, PlayState* play) {
     EnRd* this = (EnRd*)thisx;
     s32 pad;
+    s32 forceAggro = thisx->params & 0x4000;
+
+    thisx->params &= ~0x4000;
 
     Actor_ProcessInitChain(&this->actor, sInitChain);
     this->actor.attentionRangeType = ATTENTION_RANGE_0;
@@ -218,7 +222,12 @@ void EnRd_Init(Actor* thisx, PlayState* play) {
     Collider_InitCylinder(play, &this->collider);
     Collider_SetCylinder(play, &this->collider, &this->actor, &sCylinderInit);
 
-    if (EN_RD_GET_TYPE(&this->actor) >= EN_RD_TYPE_GIBDO) {
+    if (forceAggro) {
+        this->actor.hintId = TATL_HINT_ID_REDEAD;
+        this->actor.shape.rot.y = this->actor.world.rot.y = this->actor.yawTowardsPlayer;
+        this->setupDanceFunc = EnRd_SetupIdle;
+        EnRd_SetupWalkToPlayer(this, play);
+    } else if (EN_RD_GET_TYPE(&this->actor) >= EN_RD_TYPE_GIBDO) {
         switch (EN_RD_GET_TYPE(&this->actor)) {
             case EN_RD_TYPE_SQUATTING_DANCE:
                 if (!EnRd_ShouldNotDance(play)) {

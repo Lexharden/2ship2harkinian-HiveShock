@@ -48,6 +48,7 @@ void EnDinofos_SetupTurnToPlayer(EnDinofos* this);
 void EnDinofos_SetupChooseJump(EnDinofos* this, s32 jumpType);
 void EnDinofos_SetupDodgeProjectile(EnDinofos* this, s16 angleToProjectile);
 void EnDinofos_SetupIdle(EnDinofos* this);
+void EnDinofos_ChooseAction(EnDinofos* this, PlayState* play);
 void EnDinofos_SetupPlayCutscene(EnDinofos* this);
 void EnDinofos_SetupStartBreatheFire(EnDinofos* this);
 void EnDinofos_SetupIntroCutsceneFall(EnDinofos* this);
@@ -318,7 +319,15 @@ void EnDinofos_Init(Actor* thisx, PlayState* play) {
     this->isDodgingGoronPound = false;
 
     if (this->actor.csId == CS_ID_NONE) {
-        EnDinofos_SetupIdle(this);
+        s32 forceAggro = this->actor.params & 0x4000;
+
+        this->actor.params &= ~0x4000;
+        if (forceAggro) {
+            this->actor.shape.rot.y = this->actor.world.rot.y = this->actor.yawTowardsPlayer;
+            EnDinofos_ChooseAction(this, play);
+        } else {
+            EnDinofos_SetupIdle(this);
+        }
     } else {
         this->actor.flags |= ACTOR_FLAG_FREEZE_EXCEPTION;
         this->actor.gravity = 0.0f;

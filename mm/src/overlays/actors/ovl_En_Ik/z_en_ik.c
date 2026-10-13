@@ -269,6 +269,7 @@ void EnIk_Init(Actor* thisx, PlayState* play) {
     static s32 sDisplayListDesegmented = false;
     s32 i;
     EnIk* this = (EnIk*)thisx;
+    s32 forceAggro = thisx->params & 0x4000;
 
     Actor_ProcessInitChain(&this->actor, sInitChain);
     SkelAnime_InitFlex(play, &this->skelAnime, &gIronKnuckleSkel, &gIronKnuckleWalkAnim, this->jointTable,
@@ -290,7 +291,16 @@ void EnIk_Init(Actor* thisx, PlayState* play) {
         }
         sDisplayListDesegmented = true;
     }
-    EnIk_SetupIdle(this);
+
+    if (forceAggro) {
+        // HiveShock: atacar de inmediato (vanilla espera un golpe a la armadura).
+        this->actor.shape.rot.y = this->actor.world.rot.y = this->actor.yawTowardsPlayer;
+        Audio_PlayBgm_StorePrevBgm(NA_BGM_MINI_BOSS);
+        this->actor.hintId = TATL_HINT_ID_IRON_KNUCKLE;
+        EnIk_SetupWalk(this);
+    } else {
+        EnIk_SetupIdle(this);
+    }
 }
 
 void EnIk_Destroy(Actor* thisx, PlayState* play) {

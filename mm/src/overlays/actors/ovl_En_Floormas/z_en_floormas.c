@@ -138,6 +138,7 @@ void EnFloormas_Init(Actor* thisx, PlayState* play2) {
     EnFloormas* this = (EnFloormas*)thisx;
     s32 pad;
     s32 params;
+    s32 forceAggro = thisx->params & 0x4000;
 
     Actor_ProcessInitChain(&this->actor, sInitChain);
     ActorShape_Init(&this->actor.shape, 0.0f, ActorShadow_DrawCircle, 50.0f);
@@ -147,6 +148,7 @@ void EnFloormas_Init(Actor* thisx, PlayState* play2) {
     CollisionCheck_SetInfo(&this->actor.colChkInfo, &sDamageTable, &sColChkInfoInit);
 
     this->unk_192 = -1600;
+    thisx->params &= ~0x4000;
     params = ENFLOORMAS_GET_8000(&this->actor);
     this->actor.params = ENFLOORMAS_GET_7FFF(&this->actor);
 
@@ -183,7 +185,12 @@ void EnFloormas_Init(Actor* thisx, PlayState* play2) {
     this->actor.parent->parent = this->actor.child;
     this->actor.child->parent = &this->actor;
     this->actor.child->child = this->actor.parent;
-    func_808D0B08(this);
+    if (forceAggro) {
+        this->actor.shape.rot.y = this->actor.world.rot.y = this->actor.yawTowardsPlayer;
+        func_808D0CE4(this); // caminar hacia el jugador de inmediato
+    } else {
+        func_808D0B08(this);
+    }
 }
 
 void EnFloormas_Destroy(Actor* thisx, PlayState* play) {

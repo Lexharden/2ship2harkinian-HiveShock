@@ -302,9 +302,23 @@ void EnJso_Init(Actor* thisx, PlayState* play) {
     this->actor.gravity = -3.0f;
     this->scale = 0.035f;
     this->actor.flags |= ACTOR_FLAG_LOCK_ON_DISABLED;
+    this->actor.params &= ~0x4000;
     this->hintType = EN_JSO_GET_HINT_TYPE(&this->actor);
     this->introCsType = this->hintType & EN_JSO_INTRO_SCALE_UP;
-    EnJso_SetupIntroCutscene(this);
+
+    // Spawn sin Encount3 (p.ej. HiveShock): pelear sin cutscene.
+    if (this->actor.parent == NULL) {
+        this->actor.draw = EnJso_Draw;
+        this->actor.shape.yOffset = 970.0f;
+        this->actor.shape.shadowScale = 16.0f;
+        this->swordState = EN_JSO_SWORD_STATE_BOTH_DRAWN;
+        this->actor.flags &= ~ACTOR_FLAG_LOCK_ON_DISABLED;
+        this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
+        this->actor.world.rot.y = this->actor.shape.rot.y = this->actor.yawTowardsPlayer;
+        EnJso_SetupCirclePlayer(this, play);
+    } else {
+        EnJso_SetupIntroCutscene(this);
+    }
 }
 
 void EnJso_Destroy(Actor* thisx, PlayState* play) {

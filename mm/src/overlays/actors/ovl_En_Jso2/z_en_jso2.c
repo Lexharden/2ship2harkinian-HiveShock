@@ -384,6 +384,7 @@ void EnJso2_Init(Actor* thisx, PlayState* play) {
     Effect_Add(play, &this->leftSwordBlureIndex, EFFECT_BLURE1, 0, 0, &leftSwordBlureInit);
 
     this->scale = 0.042f;
+    this->actor.params &= ~0x4000;
     this->type = EN_JSO2_GET_TYPE(&this->actor);
     this->flameScroll = Rand_S16Offset(0, 7);
     this->bodyPartsCount = EN_JSO2_BODYPART_MAX;

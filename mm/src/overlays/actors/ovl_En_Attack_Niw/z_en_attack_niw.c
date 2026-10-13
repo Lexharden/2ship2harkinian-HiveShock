@@ -282,7 +282,10 @@ void EnAttackNiw_EnterViewFromOffscreen(EnAttackNiw* this, PlayState* play) {
 }
 
 void EnAttackNiw_AimAtPlayer(EnAttackNiw* this, PlayState* play) {
-    if (!EnAttackNiw_IsOnScreen(this, play)) {
+    // Spawns sin padre (HiveShock): persiguen al jugador; no despawnean al salir de pantalla.
+    s32 persistent = (this->actor.parent == NULL);
+
+    if (!persistent && !EnAttackNiw_IsOnScreen(this, play)) {
         Actor_Kill(&this->actor);
         return;
     }
@@ -319,11 +322,21 @@ void EnAttackNiw_AimAtPlayer(EnAttackNiw* this, PlayState* play) {
 
     if ((this->actor.gravity == -2.0f) && (this->unkTimer25A == 0) &&
         ((this->actor.bgCheckFlags & BGCHECKFLAG_WALL) || (this->randomAngleChangeTimer == 0))) {
-        this->targetXZSpeed = 0.0f;
-        this->actor.gravity = 0.0f;
-        this->rotStep = 0.0f;
-        this->targetRotX = this->actor.world.rot.x - 5000.0f;
-        this->actionFunc = EnAttackNiw_FlyAway;
+        if (persistent) {
+            // Vanilla aquí pasa a FlyAway y luego Actor_Kill off-screen.
+            this->unkTimer25A = 50;
+            this->randomAngleChangeTimer = 100;
+            this->targetRotY = this->actor.yawTowardsPlayer;
+            this->targetXZSpeed = 5.0f;
+            this->rotStep = 0.0f;
+            this->targetRotX = 0.0f;
+        } else {
+            this->targetXZSpeed = 0.0f;
+            this->actor.gravity = 0.0f;
+            this->rotStep = 0.0f;
+            this->targetRotX = this->actor.world.rot.x - 5000.0f;
+            this->actionFunc = EnAttackNiw_FlyAway;
+        }
 
     } else if (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) {
         EnAttackNiw_AnimateWingHead(this, play, NIW_ANIM_PECKING_SLOW_FORFLAPPING);
@@ -333,6 +346,19 @@ void EnAttackNiw_AimAtPlayer(EnAttackNiw* this, PlayState* play) {
 }
 
 void EnAttackNiw_FlyAway(EnAttackNiw* this, PlayState* play) {
+    // Bridge: tras agua u otro trigger, volver a perseguir en lugar de huir/despawn.
+    if (this->actor.parent == NULL) {
+        this->actor.gravity = -2.0f;
+        this->targetXZSpeed = 5.0f;
+        this->unkTimer25A = 50;
+        this->randomAngleChangeTimer = 100;
+        this->targetRotY = this->actor.yawTowardsPlayer;
+        this->targetRotX = 0.0f;
+        this->rotStep = 0.0f;
+        this->actionFunc = EnAttackNiw_AimAtPlayer;
+        return;
+    }
+
     if (!EnAttackNiw_IsOnScreen(this, play)) {
         Actor_Kill(&this->actor);
         return;
@@ -397,12 +423,18 @@ void EnAttackNiw_Update(Actor* thisx, PlayState* play) {
 
         if (this->actor.xyzDistToPlayerSq < SQ(viewOffset)) {
             parent = (EnNiw*)this->actor.parent;
-            // 2S2H [Port] Changed order of null checks to fix nullptr crash
-            if ((this->actor.parent != NULL) && (this->actor.parent->update != NULL) && (parent != NULL) &&
-                (parent->unkAttackNiwTimer == 0) && (player->invincibilityTimer == 0)) {
-                // this updates some player values based on what we pass, need player decomp to know what this is doing
-                func_800B8D50(play, &this->actor, 2.0f, this->actor.world.rot.y, 0.0f, 0x10);
-                parent->unkAttackNiwTimer = 70;
+            // 2S2H [Port] Parent is NULL when Attack_Niw is spawned directly (HiveShock).
+            // Vanilla checked parent->update before parent != NULL, which crashes.
+            if (player->invincibilityTimer == 0) {
+                if ((parent != NULL) && (parent->actor.update != NULL)) {
+                    if (parent->unkAttackNiwTimer == 0) {
+                        // this updates some player values based on what we pass, need player decomp to know what this is doing
+                        func_800B8D50(play, &this->actor, 2.0f, this->actor.world.rot.y, 0.0f, 0x10);
+                        parent->unkAttackNiwTimer = 70;
+                    }
+                } else if (parent == NULL) {
+                    func_800B8D50(play, &this->actor, 2.0f, this->actor.world.rot.y, 0.0f, 0x10);
+                }
             }
         }
 

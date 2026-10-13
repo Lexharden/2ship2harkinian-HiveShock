@@ -140,6 +140,9 @@ static f32 sYOffsetPerForm[PLAYER_FORM_MAX] = {
 
 void EnWallmas_Init(Actor* thisx, PlayState* play) {
     EnWallmas* this = (EnWallmas*)thisx;
+    s32 fromBridge = thisx->params & 0x4000;
+
+    thisx->params &= ~0x4000;
 
     Actor_ProcessInitChain(&this->actor, sInitChain);
     ActorShape_Init(&this->actor.shape, 0.0f, NULL, 0.5f);
@@ -148,6 +151,7 @@ void EnWallmas_Init(Actor* thisx, PlayState* play) {
     Collider_InitAndSetCylinder(play, &this->collider, &this->actor, &sCylinderInit);
     CollisionCheck_SetInfo(&this->actor.colChkInfo, &sDamageTable, &sColChkInfoInit);
 
+    this->fromBridge = fromBridge ? 1 : 0;
     this->switchFlag = WALLMASTER_GET_SWITCH_FLAG(thisx);
     this->actor.params &= 0xFF;
     this->detectionRadius = this->actor.shape.rot.x * 40.0f * 0.1f;
@@ -498,6 +502,14 @@ void EnWallmas_TakePlayer(EnWallmas* this, PlayState* play) {
     Math_StepToF(&this->actor.world.pos.z, player->actor.world.pos.z, 3.0f);
 
     if (this->timer == 30) {
+        // Bridge spawns must not void-out: that reloads the last entrance
+        // (Deku balcony → Stock Pot Inn loop in Clock Town).
+        if (this->fromBridge || play->transitionTrigger != TRANS_TRIGGER_OFF) {
+            Player_SetCsAction(play, &this->actor, PLAYER_CSACTION_END);
+            player->actor.world.pos.y = player->actor.floorHeight;
+            Actor_Kill(&this->actor);
+            return;
+        }
         Audio_PlaySfx(NA_SE_OC_ABYSS);
         func_80169FDC(play);
     }

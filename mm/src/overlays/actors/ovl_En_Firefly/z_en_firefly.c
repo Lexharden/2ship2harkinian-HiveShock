@@ -131,6 +131,9 @@ static InitChainEntry sInitChain[] = {
 
 void EnFirefly_Init(Actor* thisx, PlayState* play) {
     EnFirefly* this = (EnFirefly*)thisx;
+    s32 forceAggro = thisx->params & 0x4000;
+
+    thisx->params &= ~0x4000;
 
     Actor_ProcessInitChain(&this->actor, sInitChain);
     ActorShape_Init(&this->actor.shape, 0.0f, ActorShadow_DrawCircle, 25.0f);
@@ -151,22 +154,29 @@ void EnFirefly_Init(Actor* thisx, PlayState* play) {
         this->actor.shape.rot.x = 0x1554;
         this->actor.hintId = TATL_HINT_ID_FIRE_KEESE;
         this->maxAltitude = this->actor.home.pos.y;
+        this->currentType = KEESE_FIRE;
         this->actionFunc = EnFirefly_FlyIdle;
     } else if (this->actor.params == KEESE_ICE_FLY) {
         this->auraType = KEESE_AURA_ICE;
         this->collider.elem.atDmgInfo.effect = 2; // Freeze
         this->actor.hintId = TATL_HINT_ID_ICE_KEESE;
         this->maxAltitude = this->actor.home.pos.y + 100.0f;
+        this->currentType = KEESE_ICE;
         this->actionFunc = EnFirefly_FlyIdle;
     } else {
         this->auraType = KEESE_AURA_NONE;
         this->collider.elem.atDmgInfo.effect = 0; // Nothing
         this->actor.hintId = TATL_HINT_ID_KEESE;
         this->maxAltitude = this->actor.home.pos.y + 100.0f;
-        this->actionFunc = EnFirefly_Perch;
+        this->currentType = KEESE_NORMAL;
+        // Perch is for ceiling Keese. Bridge / flying types start in the air.
+        this->actionFunc = (forceAggro || this->actor.params == KEESE_NORMAL_FLY) ? EnFirefly_FlyIdle : EnFirefly_Perch;
     }
 
-    this->currentType = this->actor.params;
+    if (forceAggro) {
+        EnFirefly_SetupDiveAttack(this);
+    }
+
     this->collider.dim.worldSphere.radius = sSphereInit.dim.modelSphere.radius;
 }
 

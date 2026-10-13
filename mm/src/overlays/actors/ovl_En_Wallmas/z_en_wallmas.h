@@ -56,6 +56,7 @@ typedef struct EnWallmas {
     /* 0x144 */ SkelAnime skelAnime;
     /* 0x188 */ EnWallmasActionFunc actionFunc;
     /* 0x18C */ u8 drawDmgEffType;
+    /* 0x18D */ u8 fromBridge;
     /* 0x18E */ s16 timer;
     /* 0x190 */ s16 switchFlag;
     /* 0x192 */ Vec3s jointTable[WALLMASTER_LIMB_MAX];

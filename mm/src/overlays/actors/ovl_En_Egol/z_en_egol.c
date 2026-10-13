@@ -436,7 +436,9 @@ void EnEgol_GetWaypoint(EnEgol* this) {
 
 void EnEgol_Init(Actor* thisx, PlayState* play) {
     EnEgol* this = (EnEgol*)thisx;
+    s32 forceAggro = thisx->params & 0x4000;
 
+    this->actor.params &= ~0x4000;
     this->actor.gravity = -2.0f;
     Actor_SetScale(&this->actor, 0.015f);
     this->actor.colChkInfo.damageTable = &sDamageTable;
@@ -455,9 +457,11 @@ void EnEgol_Init(Actor* thisx, PlayState* play) {
 
     this->pathIndex = EYEGORE_GET_PATH_INDEX(&this->actor);
     if (this->pathIndex == EYEGORE_PATH_INDEX_NONE) {
+        // Sin path (p.ej. spawn HiveShock): pelea en sitio en vez de despawnear.
         this->pathIndex = PATH_INDEX_NONE;
-        Actor_Kill(&this->actor);
-        return;
+        this->path = NULL;
+    } else {
+        this->path = SubS_GetPathByIndex(play, this->pathIndex, EYEGORE_PATH_INDEX_NONE);
     }
 
     this->wakeupRange = this->actor.world.rot.x * 20.0f;
@@ -471,8 +475,6 @@ void EnEgol_Init(Actor* thisx, PlayState* play) {
     if (this->minLaserRange < 0.0f) {
         this->minLaserRange = 200.0f;
     }
-
-    this->path = SubS_GetPathByIndex(play, this->pathIndex, EYEGORE_PATH_INDEX_NONE);
 
     EYEGORE_SET_SPH_DIM(this->eyeCollider.elements[0], 500, 0, 0, 26, 1.0f);
 
@@ -491,7 +493,14 @@ void EnEgol_Init(Actor* thisx, PlayState* play) {
         Actor_Kill(&this->actor);
         return;
     }
-    EnEgol_SetupWait(this);
+
+    if (forceAggro || (this->path == NULL)) {
+        this->actor.shape.rot.y = this->actor.world.rot.y = this->actor.yawTowardsPlayer;
+        this->wakeupRange = 1000.0f;
+        EnEgol_SetupStand(this);
+    } else {
+        EnEgol_SetupWait(this);
+    }
 }
 
 void EnEgol_Destroy(Actor* thisx, PlayState* play) {
@@ -547,6 +556,13 @@ void EnEgol_Walk(EnEgol* this, PlayState* play) {
     f32 curFrame = this->skelAnime.curFrame;
     Player* player = GET_PLAYER(play);
     Vec3f spawnPos;
+
+    // Sin path de dungeon (Bridge): perseguir / apuntar a Link.
+    if (this->path == NULL) {
+        Math_Vec3f_Copy(&this->waypointPos, &player->actor.world.pos);
+        Math_SmoothStepToS(&this->actor.world.rot.y, this->actor.yawTowardsPlayer, 1, 0x7D0, 0);
+        this->actor.shape.rot.y = this->actor.world.rot.y;
+    }
 
     Math_SmoothStepToS(&this->headRot, 0, 1, 0x3E8, 0);
     Math_Vec3f_Copy(&spawnPos, &gZeroVec3f);
