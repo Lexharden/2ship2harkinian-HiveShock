@@ -67,6 +67,9 @@ void ConsoleLogo_PrintBuildInfo(ConsoleLogoState* this) {
     GfxPrint_SetPos(&printer, 1, 26);
     GfxPrint_Printf(&printer, "%s", gBuildDate);
 
+    GfxPrint_SetPos(&printer, 1, 27);
+    GfxPrint_Printf(&printer, "Fork HiveShock: Yafel GH (Lexharden)");
+
     GfxPrint_SetPos(&printer, 29, 26);
     GfxPrint_Printf(&printer, "%s", GetGameVersionString());
 
