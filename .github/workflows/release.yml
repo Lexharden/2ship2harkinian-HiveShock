@@ -1,0 +1,52 @@
+name: release
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (must already exist, e.g. v1.0.0)'
+        required: true
+
+jobs:
+  build:
+    uses: ./.github/workflows/main.yml
+
+  publish:
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+    - name: Download Windows build
+      uses: actions/download-artifact@v8
+      with:
+        name: 2ship-windows
+        path: 2ship-windows
+    - name: Download macOS build
+      uses: actions/download-artifact@v8
+      with:
+        name: 2ship-mac
+        path: 2ship-mac
+    - name: Download Linux build
+      uses: actions/download-artifact@v8
+      with:
+        name: 2ship-linux
+        path: 2ship-linux
+    - name: Package release files
+      run: |
+        mkdir release
+        (cd 2ship-windows && zip -r "../release/2Ship-HiveShock-${TAG}-Win64.zip" .)
+        cp 2ship-mac/2Ship.dmg "release/2Ship-HiveShock-${TAG}-macOS.dmg"
+        cp 2ship-linux/2ship.appimage "release/2Ship-HiveShock-${TAG}-Linux.appimage"
+        ls -l release
+    - name: Create GitHub Release
+      run: |
+        gh release create "$TAG" release/* \
+          --repo "${{ github.repository }}" \
+          --title "2Ship-HiveShock $TAG" \
+          --generate-notes

@@ -3,6 +3,14 @@
 
 # 2 Ship 2 Harkinian
 
+## 2Ship-HiveShock
+
+This is a fork of [2 Ship 2 Harkinian](https://github.com/HarbourMasters/2ship2harkinian) that adds **HiveShock**, a built-in TCP server so an external companion app can spawn enemies and apply effects to your live game. It is the Majora's Mask counterpart of [Shipwright-HiveShock](https://github.com/Lexharden/Shipwright-HiveShock).
+
+* Menu: **Network > HiveShock** (port, optional access token, enemy limits, on-screen counter).
+* Protocol, commands and CVars: [docs/HIVESHOCK.md](docs/HIVESHOCK.md).
+* Builds for Windows, Linux and macOS are in [Releases](https://github.com/Lexharden/2ship2harkinian-HiveShock/releases).
+
 ## Discord
 
 Official Discord: https://discord.com/invite/sxrPyuh697
@@ -16,7 +24,7 @@ If you're having any trouble after reading through this `README`, feel free ask 
 ### 1. Verify your ROM dump
 You can verify you have dumped a supported copy of the game by using the compatibility checker at https://2ship.equipment/. If you'd prefer to manually validate your ROM dump, you can cross-reference its `sha1` hash with the hashes [here](docs/supportedHashes.json).
 
-### 2. Download 2 Ship 2 Harkinian from [Releases](https://github.com/2ship2harkinian/2ship2harkinian/releases)
+### 2. Download 2Ship-HiveShock from [Releases](https://github.com/Lexharden/2ship2harkinian-HiveShock/releases)
 
 ### 3. Launch the Game!
 #### Windows
