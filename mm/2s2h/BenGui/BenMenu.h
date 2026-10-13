@@ -23,6 +23,7 @@ class BenMenu : public Ship::Menu {
     void AddMenuElements();
     void AddSettings();
     void AddEnhancements();
+    void AddNetwork();
     void AddDevTools();
 
   private:

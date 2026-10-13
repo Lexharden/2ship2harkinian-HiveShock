@@ -464,6 +464,11 @@ COMPILE_FLAGS "-O2"
 SKIP_PRECOMPILE_HEADERS ON
 )
 
+# Winsock2 must be included before windows.h; the PCH already pulls windows.h.
+set_source_files_properties(2s2h/Network/HiveShock/HiveShock.cpp PROPERTIES
+    SKIP_PRECOMPILE_HEADERS ON
+)
+
 ################################################################################
 # Precompiled Headers
 ################################################################################

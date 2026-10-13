@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <nlohmann/json.hpp>
 std::string SaveManager_GetFileName(int fileNum, bool isBackup = false);
+void SaveManager_DeleteSaveFile(const std::filesystem::path& fileName);
 bool SaveManager_HandleFileDropped(char* filePath);
 bool BinarySaveConverter_HandleFileDropped(char* filePath);
 int SaveManager_GetOpenFileSlot();

@@ -19,6 +19,8 @@
 #include <tuple>
 #include "ResolutionEditor.h"
 #include "2s2h/Rando/Rando.h"
+#include "2s2h/Enhancements/Cheats/PlayerRescue.h"
+#include "2s2h/Network/HiveShock/HiveShock.h"
 #include "build.h"
 
 #include <fast/Fast3dGui.h>
@@ -2140,6 +2142,167 @@ void BenMenu::AddEnhancements() {
         .WindowName("Audio Editor");
 }
 
+void BenMenu::AddNetwork() {
+    AddMenuEntry("Network", "gSettings.Menu.NetworkSidebarSection");
+    AddSidebarEntry("Network", "HiveShock", 1);
+    WidgetPath path = { "Network", "HiveShock", SECTION_COLUMN_1 };
+
+    AddWidget(path, "About HiveShock", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path,
+              "HiveShock is a lightweight TCP server built into this client: an external app/controller connects to "
+              "it and sends JSON commands (one per line) to spawn enemies or apply effects (heal, damage, buffs, "
+              "warps, etc.) on your live game.\n"
+              "\n"
+              "It listens on all network interfaces: on the same PC use 127.0.0.1, from a phone or tablet use the "
+              "LAN address shown below. If you set an access token, the client must send "
+              "{\"action\":\"auth\",\"token\":\"...\"} as its first line.",
+              WIDGET_TEXT);
+
+    AddWidget(path, "Enable HiveShock", WIDGET_CVAR_CHECKBOX)
+        .CVar("gCheats.HiveShockEnabled")
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Starts or stops the HiveShock server. Spawns that are still waiting are forgotten when it is turned off."));
+    AddWidget(path, "Port", WIDGET_CUSTOM).CustomFunction([](WidgetInfo& info) {
+        const bool running = HiveShock::Instance != nullptr && HiveShock::Instance->IsEnabled();
+        ImGui::BeginDisabled(running);
+        ImGui::Text("%s", info.name.c_str());
+        UIWidgets::CVarInputInt("##PortHiveShock", "gRemote.HiveShock.Port",
+                                UIWidgets::InputOptions()
+                                    .Color(UIWidgets::Colors::LightBlue)
+                                    .PlaceholderText("43000")
+                                    .DefaultValue("43000")
+                                    .Size(ImVec2(ImGui::GetFontSize() * 5, 0))
+                                    .LabelPosition(UIWidgets::LabelPosition::None)
+                                    .Tooltip("Port (1025-65534). Changing it takes effect the next time HiveShock "
+                                             "is enabled."));
+        ImGui::EndDisabled();
+    });
+    AddWidget(path, "Access token (optional)", WIDGET_CUSTOM).CustomFunction([](WidgetInfo& info) {
+        ImGui::Text("%s", info.name.c_str());
+        UIWidgets::CVarInputString("##TokenHiveShock", "gRemote.HiveShock.Token",
+                                   UIWidgets::InputOptions()
+                                       .Color(UIWidgets::Colors::LightBlue)
+                                       .PlaceholderText("empty = no authentication")
+                                       .Size(ImVec2(ImGui::GetFontSize() * 14, 0))
+                                       .LabelPosition(UIWidgets::LabelPosition::None)
+                                       .IsSecret(true)
+                                       .Tooltip("When set, a client must authenticate with this token in its first "
+                                                "line. Applies to the next connection."));
+    });
+    AddWidget(path, "HiveShock Status", WIDGET_TEXT).PreFunc([](WidgetInfo& info) {
+        info.isHidden = HiveShock::Instance == nullptr || !HiveShock::Instance->IsEnabled();
+        if (info.isHidden) {
+            return;
+        }
+        if (HiveShock::Instance->HasClient()) {
+            info.name = "Client connected";
+        } else if (HiveShock::Instance->IsListening()) {
+            info.name = "Listening on " + HiveShock::Instance->GetListenEndpoint() + "  (also 127.0.0.1)";
+        } else {
+            info.name = "Starting...";
+        }
+    });
+
+    AddWidget(path, "Spawn Queue", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "Enemy Load Limit: %d", WIDGET_CVAR_SLIDER_INT)
+        .CVar("gRemote.HiveShock.MaxLoad")
+        .Options(IntSliderOptions()
+                     .Min(4)
+                     .Max(100)
+                     .DefaultValue(14)
+                     .Format("%d")
+                     .Tooltip("How many enemies spawned through HiveShock can be alive at once. Each enemy uses 1 to "
+                              "4 points (bats and cuccos 1, Iron Knuckles and Eyegores 4). Extra spawns are never "
+                              "discarded: they wait in a queue and enter as enemies are defeated."));
+    AddWidget(path, "Elite Head Start: %d", WIDGET_CVAR_SLIDER_INT)
+        .CVar("gRemote.HiveShock.EliteReserve")
+        .Options(IntSliderOptions()
+                     .Min(0)
+                     .Max(40)
+                     .DefaultValue(10)
+                     .Format("%d")
+                     .Tooltip("Points on top of the Enemy Load Limit that only elite enemies (Iron Knuckle, Garo, "
+                              "Eyegore...) can use, so the first ones enter at once without waiting for ordinary "
+                              "enemies to be defeated. It is not a ceiling: elites can also use the ordinary limit, "
+                              "and while an elite waits, the room that frees up as ordinary enemies are defeated is "
+                              "reserved for it until it fits. 0 turns the head start off."));
+    AddWidget(path, "Elite Enemies First", WIDGET_CVAR_CHECKBOX)
+        .CVar("gRemote.HiveShock.ElitePriority")
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Elite enemies (Dinolfos, Garo, Garo Master, Iron Knuckle, Floormaster and Eyegore) go ahead of the "
+            "ordinary ones waiting in the queue. They still respect the limits: an elite waits for room like any "
+            "other, but nothing ordinary is let in before it."));
+
+    AddWidget(path, "Hard Limits (advanced)", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path,
+              "These two caps protect the game from running out of actor slots. The defaults (32 and 40) are safe. "
+              "Raising them lets many more enemies be alive at once but can lower the frame rate or make the game "
+              "unstable, so raise them gradually. The Enemy Load Limit is still applied first.",
+              WIDGET_TEXT);
+    AddWidget(path, "Max HiveShock Enemies Alive: %d", WIDGET_CVAR_SLIDER_INT)
+        .CVar("gRemote.HiveShock.MaxAlive")
+        .Options(IntSliderOptions().Min(8).Max(80).DefaultValue(32).Format("%d").Tooltip(
+            "Most enemies spawned through HiveShock that can be alive at once, whatever their weight."));
+    AddWidget(path, "Max Enemies In The Scene: %d", WIDGET_CVAR_SLIDER_INT)
+        .CVar("gRemote.HiveShock.MaxSceneEnemies")
+        .Options(IntSliderOptions().Min(16).Max(100).DefaultValue(40).Format("%d").Tooltip(
+            "Most enemies allowed in the scene in total, counting the game's own. Spawns wait while the scene is "
+            "at this number."));
+
+    AddWidget(path, "Cleanup", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "Defeat Alive Enemies When Link Dies", WIDGET_CVAR_CHECKBOX)
+        .CVar("gRemote.HiveShock.DefeatOnDeath")
+        .Options(CheckboxOptions().Tooltip(
+            "When Link dies, the HiveShock enemies that are still alive are removed and counted as defeated, so you "
+            "never get stuck with enemies you cannot kill. The spawns still waiting in the queue carry on. When "
+            "off, the living enemies follow Link back into the scene after he dies."));
+    AddWidget(path, "Enemies Disappear On Zone Change", WIDGET_CVAR_CHECKBOX)
+        .CVar("gRemote.HiveShock.DespawnOnZoneChange")
+        .Options(CheckboxOptions().Tooltip(
+            "When Link changes zone (a room inside a dungeon or a loading screen) the HiveShock enemies that are "
+            "still alive are left behind and counted as defeated. The spawns still waiting in the queue carry on "
+            "and enter in the new zone. When off (default), the living enemies follow Link to the new zone."));
+
+    AddWidget(path, "Counter", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "Enemy Counter", WIDGET_TEXT).PreFunc([](WidgetInfo& info) {
+        info.isHidden = HiveShock::Instance == nullptr || !HiveShock::Instance->IsEnabled();
+        if (info.isHidden) {
+            return;
+        }
+        const HiveShock::Stats stats = HiveShock::Instance->GetStats();
+        info.name = fmt::format("Spawned {} / {}  |  Alive {}  |  Waiting {}  |  Defeated {}", stats.spawned,
+                                stats.total, stats.alive, stats.waiting, stats.defeated);
+        if (stats.eliteBankMax > 0) {
+            info.name += fmt::format("  |  Elite head start {}/{} ({} waiting)", stats.eliteBank, stats.eliteBankMax,
+                                     stats.eliteWaiting);
+        }
+    });
+    AddWidget(path, "Reset Counter", WIDGET_BUTTON)
+        .Options(ButtonOptions().Tooltip("Starts counting from now. Enemies that are alive or waiting stay counted."))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = HiveShock::Instance == nullptr || !HiveShock::Instance->IsEnabled();
+        })
+        .Callback([](WidgetInfo&) {
+            if (HiveShock::Instance != nullptr) {
+                HiveShock::Instance->ResetStats();
+            }
+        });
+    AddWidget(path, "Toggle Enemy Counter Window", WIDGET_WINDOW_BUTTON)
+        .CVar("gWindows.HiveShockCounter")
+        .Options(ButtonOptions().Tooltip(
+            "Shows a small on-screen counter of the enemies sent through HiveShock: spawned out of the total "
+            "received, alive, waiting in the queue and defeated."))
+        .WindowName("HiveShock Counter");
+
+    AddWidget(path, "Rescue", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "Rescue Link", WIDGET_BUTTON)
+        .Callback([](WidgetInfo&) { RescuePlayer(); })
+        .PreFunc([](WidgetInfo& info) { info.isHidden = gPlayState == nullptr; })
+        .Options(ButtonOptions().Tooltip(
+            "Releases grabs and puts Link on the last valid ground of this room. Use it if an enemy leaves you stuck "
+            "inside the walls."));
+}
+
 void BenMenu::AddDevTools() {
     AddMenuEntry("Dev Tools", "gSettings.Menu.DevToolsSidebarSection");
     AddSidebarEntry("Dev Tools", "General", 3);
@@ -2322,6 +2485,7 @@ void BenMenu::InitElement() {
     Ship::Menu::InitElement();
     AddSettings();
     AddEnhancements();
+    AddNetwork();
     AddDevTools();
 
     if (CVarGetInteger("gSettings.Menu.SidebarSearch", 0)) {
