@@ -23,6 +23,7 @@
 #include "2s2h/BenGui/CosmeticEditor.h"
 #include "2s2h_assets.h"
 #include "2s2h/GameInteractor/GameInteractor.h"
+#include "2s2h/Network/HiveShock/HiveShock.h"
 #include <libultraship/bridge/gfxbridge.h>
 #include <libultraship/bridge/consolevariablebridge.h>
 
@@ -5146,8 +5147,14 @@ void Interface_SetBButtonInterfaceDoAction(PlayState* play, s16 bButtonDoAction)
 s32 Health_ChangeBy(PlayState* play, s16 healthChange) {
     if (healthChange > 0) {
         Audio_PlaySfx(NA_SE_SY_HP_RECOVER);
-    } else if (gSaveContext.save.saveInfo.playerData.doubleDefense && (healthChange < 0)) {
-        healthChange >>= 1;
+    } else if (healthChange < 0) {
+        // 2S2H [HiveShock] Invencible: el golpe sigue, la vida no. insta_kill no usa esta función.
+        if (HiveShock_ShouldBlockHealthLoss()) {
+            return gSaveContext.save.saveInfo.playerData.health > 0;
+        }
+        if (gSaveContext.save.saveInfo.playerData.doubleDefense) {
+            healthChange >>= 1;
+        }
     }
 
     gSaveContext.save.saveInfo.playerData.health += healthChange;

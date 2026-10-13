@@ -26,6 +26,7 @@
 #include <string.h>
 #include "2s2h/Enhancements/FrameInterpolation/FrameInterpolation.h"
 #include "2s2h/GameInteractor/GameInteractor.h"
+#include "2s2h/Network/HiveShock/HiveShock.h"
 #include "2s2h/BenPort.h"
 #include "2s2h/ShipUtils.h"
 #include "2s2h/ObjectExtension/ObjectExtension.h"
@@ -2979,6 +2980,9 @@ void Actor_Draw(PlayState* play, Actor* actor) {
         } else {
             actorDefaultHitColor.b = COLORFILTER_GET_COLORINTENSITY(actor->colorFilterParams) | 7;
         }
+
+        // 2S2H [HiveShock] Colores de buff (si el filtro lo está usando HiveShock).
+        HiveShock_OverrideColorFilter(actor, &actorDefaultHitColor);
 
         if (actor->colorFilterParams & COLORFILTER_BUFFLAG_XLU) {
             func_800AE778(play, &actorDefaultHitColor, actor->colorFilterTimer,

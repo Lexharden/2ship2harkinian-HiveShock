@@ -394,6 +394,7 @@ typedef enum {
     // - `*DamageTable`
     // - `*f32`
     // - `f32 sDamageMultipliers[16]`
+    // - `*Actor` (AC, who is taking the hit)
     VB_DAMAGE_MULTIPLIER,
 
     // #### `result`
