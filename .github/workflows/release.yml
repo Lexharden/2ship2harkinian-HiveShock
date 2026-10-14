@@ -65,4 +65,5 @@ jobs:
         gh release create "$TAG" release/* \
           --repo "${{ github.repository }}" \
           --title "2Ship-HiveShock $TAG" \
-          --notes-file notes.md \n          --draft
+          --notes-file notes.md \
+          --draft
