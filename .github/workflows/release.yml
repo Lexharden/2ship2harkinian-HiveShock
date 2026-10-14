@@ -22,6 +22,22 @@ jobs:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+    - name: Checkout (changelog)
+      uses: actions/checkout@v6
+      with:
+        ref: ${{ env.TAG }}
+        submodules: false
+    - name: Extract release notes from CHANGELOG.md
+      run: |
+        awk -v tag="$TAG" '
+          /^## \[/ { if (found) exit; if (index($0, "[" tag "]")) { found = 1; next } }
+          found { print }
+        ' CHANGELOG.md > notes.md
+        if [ ! -s notes.md ]; then
+          echo "No CHANGELOG.md section for $TAG" >&2
+          exit 1
+        fi
+        cat notes.md
     - name: Download Windows build
       uses: actions/download-artifact@v8
       with:
@@ -49,4 +65,4 @@ jobs:
         gh release create "$TAG" release/* \
           --repo "${{ github.repository }}" \
           --title "2Ship-HiveShock $TAG" \
-          --generate-notes
+          --notes-file notes.md
