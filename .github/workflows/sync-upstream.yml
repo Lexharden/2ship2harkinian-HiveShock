@@ -1,0 +1,45 @@
+name: sync-upstream
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-22.04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+        submodules: false
+    - name: Fast-forward develop from upstream
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git remote add upstream https://github.com/HarbourMasters/2ship2harkinian.git
+        git fetch upstream develop
+        git push origin refs/remotes/upstream/develop:refs/heads/develop
+    - name: Open a PR merging develop into hiveshock
+      run: |
+        git fetch origin develop hiveshock
+        if git merge-base --is-ancestor origin/develop origin/hiveshock; then
+          echo "hiveshock already contains upstream develop"
+          exit 0
+        fi
+        branch="sync/upstream-$(date +%Y%m%d)"
+        git checkout -B "$branch" origin/hiveshock
+        if git merge --no-edit origin/develop; then
+          git push -f origin "$branch"
+          gh pr create --base hiveshock --head "$branch" \
+            --title "Sync upstream develop" --body "Automatic merge of upstream develop into hiveshock." \
+            || echo "PR already exists"
+        else
+          git merge --abort
+          echo "::warning::Merge conflicts; merge origin/develop into hiveshock manually."
+        fi
