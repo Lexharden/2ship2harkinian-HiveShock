@@ -133,7 +133,9 @@ constexpr size_t kMaxPendingSpawns = 1000;
 constexpr size_t kMaxNameTagChars = 18;
 constexpr f32 kEnemySpawnDistance = 80.0f;
 constexpr s32 kActorHardCap = 255 - 24; // límite duro del motor; dejar holgura para el resto de la escena
-constexpr s32 kMinFreeObjectSlots = 3;  // no agotar el banco de objects de la escena
+// No agotar el banco de objects de la escena. Escenas grandes (Termina Field) ya usan ~31 de 35 slots, así que se deja
+// solo la holgura mínima para que un cambio de sala siga pudiendo cargar los suyos.
+constexpr s32 kMinFreeObjectSlots = 2;
 constexpr u32 kCuccoArmyFrameGap = 2; // ticks entre cada cucco del army
 // El juego corre a 20 ticks/s. Los spawns se liberan como mucho uno cada ~0.4 s (los ligeros, cada 0.1 s) para que un
 // relleno tras varias muertes no llegue de golpe.
@@ -148,6 +150,7 @@ constexpr s32 kDefaultEliteReserve = 10;
 constexpr s32 kMaxEliteReserve = 40;
 constexpr s32 kOrdinaryFloor = 0;
 constexpr u32 kEliteWaitLogTicks = 100;
+constexpr u32 kOrdinaryWaitLogTicks = 200;
 // Cadencia de reintento de un spawn retenido (no permitido ahora) o que no pudo colocar un actor.
 constexpr u32 kHeldRecheckFrames = 10;
 constexpr u32 kFailedRetryFrames = 20;
@@ -633,6 +636,7 @@ u32 gTick = 0;
 u32 gNextSpawnTick = 0;
 u32 gSpawnUnblockTick = 0;
 u32 gLastEliteWaitLogTick = 0;
+u32 gLastOrdinaryWaitLogTick = 0;
 u32 gRoomGraceUntilTick = 0;
 s16 gLastRoom = -1;
 bool gBacklogDirty = false;
@@ -1395,8 +1399,15 @@ s32 SpawnTransientObject(ObjectContext* objectCtx, s16 objectId) {
     }
 
     s32 slot = objectCtx->numEntries;
-    objectCtx->slots[slot].id = objectId;
     size_t size = gObjectTable[objectId].vromEnd - gObjectTable[objectId].vromStart;
+    // El banco es un bloque fijo: un object que no cabe escribiría fuera de él.
+    const uintptr_t segmentStart = reinterpret_cast<uintptr_t>(objectCtx->slots[slot].segment);
+    const uintptr_t spaceEnd = reinterpret_cast<uintptr_t>(objectCtx->spaceEnd);
+    if (spaceEnd != 0 && segmentStart + size > spaceEnd) {
+        SPDLOG_WARN("HiveShock: object {} ({} bytes) does not fit in the scene object space", objectId, size);
+        return OBJECT_SLOT_NONE;
+    }
+    objectCtx->slots[slot].id = objectId;
     if (size != 0) {
         DmaMgr_SendRequest0(objectCtx->slots[slot].segment, gObjectTable[objectId].vromStart, size);
     }
@@ -1568,11 +1579,25 @@ bool IsCountedSpawnName(const std::string& name) {
     return name != "fairy" && name != "bombchu";
 }
 
-s32 CountSceneEnemies() {
+// Enemigos de la escena que no son del bridge (los propios del mapa, p. ej. Termina Field está lleno de ellos).
+s32 CountNativeSceneEnemies() {
     if (gPlayState == nullptr) {
         return 0;
     }
-    return gPlayState->actorCtx.actorLists[ACTORCAT_ENEMY].length;
+    s32 native = 0;
+    for (Actor* actor = gPlayState->actorCtx.actorLists[ACTORCAT_ENEMY].first; actor != nullptr; actor = actor->next) {
+        bool tracked = false;
+        for (const TrackedEnemy& t : gTrackedEnemies) {
+            if (t.actor == actor) {
+                tracked = true;
+                break;
+            }
+        }
+        if (!tracked) {
+            native++;
+        }
+    }
+    return native;
 }
 
 // Pone un spawn al FRENTE de la cola, p. ej. un enemigo que seguía vivo cuando cambió la escena: el regalo del
@@ -1647,6 +1672,28 @@ s32 GetMaxAlive() {
 
 s32 GetMaxSceneEnemies() {
     return std::max(1, CVarGetInteger(CVAR_HS("MaxSceneEnemies"), kDefaultMaxSceneEnemies));
+}
+
+// Enemigos en escena para el tope MaxSceneEnemies: los del bridge cuentan todos; los propios del mapa solo hasta un
+// cuarto del tope. Así un campo con decenas de enemigos nativos no deja la cola bloqueada para siempre, y donde hay
+// pocos (la mayoría de zonas) la cuenta es exactamente la de antes.
+s32 CountSceneEnemies() {
+    if (gPlayState == nullptr) {
+        return 0;
+    }
+    const s32 total = gPlayState->actorCtx.actorLists[ACTORCAT_ENEMY].length;
+    const s32 native = CountNativeSceneEnemies();
+    const s32 nativeCap = std::max(1, GetMaxSceneEnemies() / 4);
+    return (total - native) + std::min(native, nativeCap);
+}
+
+// Estado de los topes, solo para el log de diagnóstico de los spawns que esperan.
+std::string DescribeCapacity() {
+    const s32 free = gPlayState != nullptr ? CountFreeObjectSlots() : 0;
+    return fmt::format("alive {}/{}, scene {}/{} (native {}), actors {}/{}, free object slots {}",
+                       CountLiveTrackedEnemies(), GetMaxAlive(), CountSceneEnemies(), GetMaxSceneEnemies(),
+                       CountNativeSceneEnemies(), gPlayState != nullptr ? gPlayState->actorCtx.totalLoadedActors : 0,
+                       kActorHardCap, free);
 }
 
 s32 GetMaxLoad() {
@@ -2220,9 +2267,9 @@ void TickPendingSpawns() {
     const bool elitePriority = CVarGetInteger(CVAR_HS("ElitePriority"), 1) != 0;
     bool laneBlocked[2] = { false, false };
     for (int pass = elitePriority ? 0 : 1; pass < 2; pass++) {
-        if (pass == 1 && elitePriority && laneBlocked[static_cast<int>(Lane::Elite)]) {
-            return; // el hueco liberado pertenece al élite que espera
-        }
+        // El hueco liberado pertenece al élite que espera: los ordinarios contados no pasan, pero fairy/bombchu no usan
+        // presupuesto y no deben quedarse atrás de un enemigo bloqueado.
+        const bool onlyFree = pass == 1 && elitePriority && laneBlocked[static_cast<int>(Lane::Elite)];
 
         for (auto it = gPendingSpawns.begin(); it != gPendingSpawns.end();) {
             if (gTick < it->earliestTick) {
@@ -2242,7 +2289,9 @@ void TickPendingSpawns() {
                 ++it;
                 continue;
             }
-            if (laneBlocked[static_cast<int>(lane)]) {
+            // Los que no cuentan (fairy/bombchu) ignoran el bloqueo del carril: no compiten por sitio con nadie.
+            const bool counted = IsCountedSpawnName(def->name);
+            if (counted && (onlyFree || laneBlocked[static_cast<int>(lane)])) {
                 ++it;
                 continue;
             }
@@ -2260,11 +2309,16 @@ void TickPendingSpawns() {
                 case ApplyResult::Deferred:
                     return;
                 case ApplyResult::LaneFull:
-                    laneBlocked[static_cast<int>(lane)] = true;
+                    if (counted) {
+                        laneBlocked[static_cast<int>(lane)] = true;
+                    }
                     if (lane == Lane::Elite && gTick - gLastEliteWaitLogTick >= kEliteWaitLogTicks) {
                         gLastEliteWaitLogTick = gTick;
-                        SPDLOG_INFO("HiveShock: elite '{}' is waiting, freed room is reserved for it: {}", it->name,
-                                    whyBlocked);
+                        SPDLOG_INFO("HiveShock: elite '{}' is waiting, freed room is reserved for it: {} [{}]",
+                                    it->name, whyBlocked, DescribeCapacity());
+                    } else if (lane == Lane::Ordinary && gTick - gLastOrdinaryWaitLogTick >= kOrdinaryWaitLogTicks) {
+                        gLastOrdinaryWaitLogTick = gTick;
+                        SPDLOG_INFO("HiveShock: '{}' is waiting: {} [{}]", it->name, whyBlocked, DescribeCapacity());
                     }
                     ++it;
                     break;
@@ -2275,8 +2329,8 @@ void TickPendingSpawns() {
                 case ApplyResult::Skipped:
                     // No se pudo colocar esta vez (sin suelo, límite de actores...). Se conserva y se reintenta pronto.
                     if (++it->attempts % 8 == 1) {
-                        SPDLOG_WARN("HiveShock: could not place '{}' (attempt {}), will retry", it->name,
-                                    it->attempts);
+                        SPDLOG_WARN("HiveShock: could not place '{}' (attempt {}), will retry [{}]", it->name,
+                                    it->attempts, DescribeCapacity());
                     }
                     it->earliestTick = gTick + kFailedRetryFrames;
                     ++it;

@@ -3,6 +3,18 @@
 All notable changes to 2Ship-HiveShock. Format based on [Keep a Changelog](https://keepachangelog.com/).
 Each `## [vX.Y.Z]` section is published as the release notes of that tag.
 
+## [v1.0.1] - 2026-10-26
+
+### Fixed
+- Enemies could not be spawned in Termina Field: the map's own enemies filled the `MaxSceneEnemies` cap and blocked the
+  whole queue. Native enemies now count only up to a quarter of the cap; elsewhere the count is unchanged.
+- `fairy` and `bombchu` no longer wait behind an enemy that has no room, since they use no budget.
+- Transient objects are no longer loaded past the end of the scene object space.
+
+### Changed
+- One more transient object slot is available in large scenes (minimum free slots 3 -> 2).
+- Log lines for waiting spawns now include alive, scene, native, actor and free object slot counts.
+
 ## [v1.0.0] - 2026-10-14
 
 First release of 2Ship-HiveShock, based on 2 Ship 2 Harkinian `develop` (`f1dda4c28`).
