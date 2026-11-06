@@ -3,7 +3,7 @@
 All notable changes to 2Ship-HiveShock. Format based on [Keep a Changelog](https://keepachangelog.com/).
 Each `## [vX.Y.Z]` section is published as the release notes of that tag.
 
-## [Unreleased]
+## [v1.1.0] - 2026-11-05
 
 ### Added
 - New spawns: `nejiron`, `dodongo`, `takkuri`, `death_armos`, `gerudo_pirate` (`kaizoku`), `gomess` and the boss
