@@ -91,6 +91,7 @@ typedef struct EnKaizoku {
     /* 0x2D6 */ s16 csId;
     /* 0x2D8 */ u8 animationsDisabled;
     /* 0x2D9 */ u8 defeatBreathingStarted;
+    /* 0x2DA */ u8 fromBridge; // 2S2H [HiveShock] creado por HiveShock: sin intro, sin cutscenes, sin salida de escena
     /* 0x2DC */ f32 animEndFrame;
     /* 0x2E0 */ f32 circlingRate;
     /* 0x2E4 */ EnKaizokuAnimation animIndex;

@@ -26,6 +26,7 @@
  */
 
 #include "z_boss_01.h"
+#include "2s2h/Network/HiveShock/HiveShock.h"
 #include "z64rumble.h"
 #include "z64shrink_window.h"
 #include "assets/objects/gameplay_keep/gameplay_keep.h"
@@ -85,6 +86,7 @@ void Boss01_Damaged(Boss01* this, PlayState* play);
 void Boss01_SetupSummonMoths(Boss01* this, PlayState* play);
 void Boss01_SummonMoths(Boss01* this, PlayState* play);
 void Boss01_SetupDeathCutscene(Boss01* this, PlayState* play);
+void Boss01_BridgeDefeat(Boss01* this, PlayState* play);
 void Boss01_DeathCutscene(Boss01* this, PlayState* play);
 void Boss01_SetupStunned(Boss01* this, PlayState* play);
 void Boss01_Stunned(Boss01* this, PlayState* play);
@@ -902,7 +904,10 @@ void Boss01_Init(Actor* thisx, PlayState* play) {
         this->actor.draw = Boss01_Afterimage_Draw;
         this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
     } else {
-        if (CHECK_WEEKEVENTREG(WEEKEVENTREG_CLEARED_WOODFALL_TEMPLE)) {
+        // 2S2H [HiveShock] Un Odolwa de HiveShock no depende del progreso del save ni toca la iluminación de la escena.
+        this->fromBridge = HiveShock_IsSpawningActor() ? 1 : 0;
+
+        if (!this->fromBridge && CHECK_WEEKEVENTREG(WEEKEVENTREG_CLEARED_WOODFALL_TEMPLE)) {
             Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_DOOR_WARP1, 0.0f, 0.0f, 0.0f, 0, 0, 0,
                                ENDOORWARP1_FF_1);
             Actor_Spawn(&play->actorCtx, play, ACTOR_ITEM_B_HEART, 0.0f, 0.0f, 250.0f, 0, 0, 0, BHEART_PARAM_NORMAL);
@@ -910,9 +915,11 @@ void Boss01_Init(Actor* thisx, PlayState* play) {
             return;
         }
 
-        play->envCtx.lightSettingOverride = 0;
-        play->envCtx.lightBlendOverride = LIGHT_BLEND_OVERRIDE_FULL_CONTROL;
-        play->envCtx.lightBlend = 0.0f;
+        if (!this->fromBridge) {
+            play->envCtx.lightSettingOverride = 0;
+            play->envCtx.lightBlendOverride = LIGHT_BLEND_OVERRIDE_FULL_CONTROL;
+            play->envCtx.lightBlend = 0.0f;
+        }
         sOdolwa = this;
         sOdolwaBugCount = 0;
         play->specialEffects = sOdolwaEffects;
@@ -939,16 +946,29 @@ void Boss01_Init(Actor* thisx, PlayState* play) {
         SkelAnime_InitFlex(play, &this->skelAnime, &gOdolwaSkel, &gOdolwaReadyAnim, this->jointTable, this->morphTable,
                            ODOLWA_LIMB_MAX);
 
-        if ((KREG(64) != 0) || CHECK_EVENTINF(EVENTINF_INTRO_CS_WATCHED_ODOLWA)) {
+        if (this->fromBridge || (KREG(64) != 0) || CHECK_EVENTINF(EVENTINF_INTRO_CS_WATCHED_ODOLWA)) {
             Boss01_SetupWait(this, play, ODOLWA_WAIT_READY);
             this->actor.gravity = -2.5f;
-            sOdolwaMusicStartTimer = KREG(15) + 20;
+            // HiveShock: sin música de jefe (no guarda la anterior para restaurarla).
+            sOdolwaMusicStartTimer = this->fromBridge ? 0 : KREG(15) + 20;
         } else {
             Boss01_SetupIntroCutscene(this, play);
         }
 
-        sMothSwarm = (EnTanron1*)Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_TANRON1, 0.0f, 437.0f,
-                                                    -750.0f, 0, 0, 0, 0x100);
+        if (this->fromBridge) {
+            // El enjambre de polillas nace junto a Odolwa en vez de en una coordenada fija de la arena.
+            sMothSwarm = (EnTanron1*)Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_TANRON1,
+                                                        this->actor.world.pos.x, this->actor.world.pos.y + 437.0f,
+                                                        this->actor.world.pos.z, 0, 0, 0, 0x100);
+        } else {
+            sMothSwarm = (EnTanron1*)Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_TANRON1, 0.0f,
+                                                        437.0f, -750.0f, 0, 0, 0, 0x100);
+        }
+        if (sMothSwarm == NULL) {
+            // Sin enjambre el resto del código lo desreferencia: mejor no crear a Odolwa.
+            Actor_Kill(&this->actor);
+            return;
+        }
     }
 
     this->animMorphFrames1 = -2.0f;
@@ -956,6 +976,14 @@ void Boss01_Init(Actor* thisx, PlayState* play) {
 }
 
 void Boss01_Destroy(Actor* thisx, PlayState* play) {
+    Boss01* this = (Boss01*)thisx;
+
+    // 2S2H [HiveShock] Un Odolwa de HiveShock no deja punteros globales ni efectos de la arena.
+    if (this->fromBridge && (sOdolwa == this)) {
+        sOdolwa = NULL;
+        sMothSwarm = NULL;
+        play->specialEffects = NULL;
+    }
 }
 
 /**
@@ -1163,6 +1191,22 @@ void Boss01_IntroCutscene(Boss01* this, PlayState* play) {
 }
 
 void Boss01_SetupSummonBugsCutscene(Boss01* this, PlayState* play) {
+    if (this->fromBridge) {
+        // 2S2H [HiveShock] La cutscene mueve a Odolwa y a Link a coordenadas fijas de la arena: aquí las polillas
+        // caen alrededor de Link y la pelea sigue sin cámara ni teletransporte.
+        Player* player = GET_PLAYER(play);
+        s32 bugIndex;
+
+        this->hasPlayedSummonBugCs++;
+        for (bugIndex = 0; bugIndex < 4; bugIndex++) {
+            Actor_Spawn(&play->actorCtx, play, ACTOR_BOSS_01, player->actor.world.pos.x + Rand_CenteredFloat(300.0f),
+                        player->actor.world.pos.y + 300.0f, player->actor.world.pos.z + Rand_CenteredFloat(300.0f), 0,
+                        Rand_ZeroFloat(0x10000), 0, ODOLWA_PARAMS(ODOLWA_TYPE_BUG));
+        }
+        Boss01_SetupWait(this, play, ODOLWA_WAIT_READY);
+        return;
+    }
+
     this->actionFunc = Boss01_SummonBugsCutscene;
     Animation_MorphToLoop(&this->skelAnime, &gOdolwaSideToSideDanceAnim, -10.0f);
     this->cutsceneState = ODOLWA_BUG_SUMMONING_CS_STATE_STARTED;
@@ -1414,12 +1458,16 @@ void Boss01_Wait(Boss01* this, PlayState* play) {
 
         if (Rand_ZeroOne() < 0.2f) {
             pos = player2->actor.world.pos;
+        } else if (this->fromBridge) {
+            // 2S2H [HiveShock] Alrededor de Link, no de las coordenadas fijas de la arena.
+            pos.x = player2->actor.world.pos.x + Rand_CenteredFloat(600.0f);
+            pos.z = player2->actor.world.pos.z + Rand_CenteredFloat(600.0f);
         } else {
             pos.x = Rand_CenteredFloat(1200.0f);
             pos.z = Rand_CenteredFloat(1200.0f);
         }
 
-        pos.y = 1200.0f;
+        pos.y = this->fromBridge ? player2->actor.world.pos.y + 300.0f : 1200.0f;
 
         switch (this->waitType) {
             case ODOLWA_WAIT_SPIN_SWORD:
@@ -1433,8 +1481,11 @@ void Boss01_Wait(Boss01* this, PlayState* play) {
             case ODOLWA_WAIT_SIDE_TO_SIDE_DANCE:
             case ODOLWA_WAIT_SPIN_DANCE:
             case ODOLWA_WAIT_JUMP_DANCE:
-                Audio_PlaySfx_AtPos(&sFallingBlockSfxPos, NA_SE_EV_ROCK_FALL);
-                Boss01_SpawnEffectFallingBlock((OdolwaEffect*)play->specialEffects, &pos, false);
+                // Los bloques caen hasta el suelo de la arena (y = 0 fijo): fuera de ella no tienen sentido.
+                if (!this->fromBridge) {
+                    Audio_PlaySfx_AtPos(&sFallingBlockSfxPos, NA_SE_EV_ROCK_FALL);
+                    Boss01_SpawnEffectFallingBlock((OdolwaEffect*)play->specialEffects, &pos, false);
+                }
                 break;
 
             default:
@@ -1563,6 +1614,17 @@ void Boss01_Run(Boss01* this, PlayState* play) {
     this->runTargetPosRotY += this->runTargetPosAngularVelocityY;
     Matrix_RotateYF(this->runTargetPosRotY, MTXMODE_NEW);
     Matrix_MultVecZ(450.0f, &targetPos);
+    if (this->fromBridge) {
+        // 2S2H [HiveShock] Corre en círculo alrededor de Link, no del origen de la arena (que fuera de ella puede
+        // estar al otro lado de una pared). Si choca con una pared, deja de correr.
+        Player* player = GET_PLAYER(play);
+
+        targetPos.x += player->actor.world.pos.x;
+        targetPos.z += player->actor.world.pos.z;
+        if (this->actor.bgCheckFlags & BGCHECKFLAG_WALL) {
+            this->timers[TIMER_CURRENT_ACTION] = 0;
+        }
+    }
     diffX = targetPos.x - this->actor.world.pos.x;
     diffZ = targetPos.z - this->actor.world.pos.z;
     Math_ApproachS(&this->actor.world.rot.y, Math_Atan2S_XY(diffZ, diffX), 0xA, 0x1000);
@@ -1605,6 +1667,9 @@ void Boss01_JumpSquat(Boss01* this, PlayState* play) {
         Animation_MorphToPlayOnce(&this->skelAnime, &gOdolwaJumpAnim, this->animMorphFrames1);
         this->actor.velocity.y = 35.0f;
         this->actor.gravity = -2.5f;
+        if (this->fromBridge) {
+            this->timers[TIMER_CURRENT_ACTION] = 90; // tiempo máximo en el aire (ver Boss01_Jump)
+        }
         Matrix_RotateYS(this->actor.world.rot.y, MTXMODE_NEW);
 
         if (!this->shouldPerformFallingSlash) {
@@ -1636,6 +1701,8 @@ void Boss01_JumpSquat(Boss01* this, PlayState* play) {
  * action once he gets close enough to the ground.
  */
 void Boss01_Jump(Boss01* this, PlayState* play) {
+    s32 shouldLand;
+
     SkelAnime_Update(&this->skelAnime);
     Actor_PlaySfx(&this->actor, NA_SE_EN_MIBOSS_JUMP2 - SFX_FLAG);
 
@@ -1646,7 +1713,21 @@ void Boss01_Jump(Boss01* this, PlayState* play) {
         Actor_PlaySfx(&this->actor, NA_SE_EN_MIBOSS_SWORD_OLD);
     }
 
-    if (this->actor.world.pos.y < 40.0f) {
+    // 2S2H [HiveShock] El suelo de la arena está en y = 0, así que "y < 40" es "cerca del suelo". Fuera de ella el
+    // suelo está a otra altura: se mide contra el suelo real y, por si nunca lo alcanza (techo, hueco, pared), un
+    // tiempo máximo de salto lo hace aterrizar en vez de quedarse atorado en el aire.
+    if (this->fromBridge) {
+        shouldLand = (this->actor.velocity.y < 0.0f) &&
+                     ((this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) ||
+                      (this->actor.world.pos.y < this->actor.floorHeight + 40.0f));
+        if (this->timers[TIMER_CURRENT_ACTION] == 0) {
+            shouldLand = true;
+        }
+    } else {
+        shouldLand = this->actor.world.pos.y < 40.0f;
+    }
+
+    if (shouldLand) {
         this->actionFunc = Boss01_JumpLand;
         Animation_MorphToPlayOnce(&this->skelAnime, &gOdolwaCrouchAnim, this->animMorphFrames1);
         this->timers[TIMER_CURRENT_ACTION] = 5;
@@ -2044,6 +2125,11 @@ void Boss01_UpdateDamage(Boss01* this, PlayState* play) {
                     this->damagedTimer = 5;
                     this->actor.colChkInfo.health -= damage;
                     if ((s8)this->actor.colChkInfo.health <= 0) {
+                        if (this->fromBridge) {
+                            // 2S2H [HiveShock] Sin cutscene, Heart Container, warp, ni jefe derrotado en Time Splits.
+                            Boss01_BridgeDefeat(this, play);
+                            return;
+                        }
                         Boss01_SetupDeathCutscene(this, play);
                         Actor_PlaySfx(&this->actor, NA_SE_EN_MIBOSS_DEAD_OLD);
                         Enemy_StartFinishingBlow(play, &this->actor);
@@ -2059,6 +2145,29 @@ void Boss01_UpdateDamage(Boss01* this, PlayState* play) {
             }
         }
     }
+}
+
+/**
+ * 2S2H [HiveShock] Derrota de un Odolwa creado por HiveShock: desaparece con él todo lo que creó (polillas, insectos,
+ * imágenes residuales) y no queda nada atrás: ni Heart Container, ni warp, ni música de victoria.
+ */
+void Boss01_BridgeDefeat(Boss01* this, PlayState* play) {
+    Actor* actor;
+    Actor* next;
+
+    Actor_PlaySfx(&this->actor, NA_SE_EN_MIBOSS_DEAD_OLD);
+    for (actor = play->actorCtx.actorLists[ACTORCAT_BOSS].first; actor != NULL; actor = next) {
+        next = actor->next;
+        if ((actor->id == ACTOR_BOSS_01) && (actor != &this->actor)) {
+            Actor_Kill(actor);
+        }
+    }
+    if (sMothSwarm != NULL) {
+        Actor_Kill(&sMothSwarm->actor);
+    }
+    sOdolwaMusicStartTimer = 0;
+    // Los globales se limpian en Boss01_Destroy: el resto de este frame todavía lee a Odolwa y al enjambre.
+    Actor_Kill(&this->actor);
 }
 
 void Boss01_SetupSummonMoths(Boss01* this, PlayState* play) {
@@ -2364,9 +2473,11 @@ void Boss01_Update(Actor* thisx, PlayState* play2) {
 
     Math_Vec3f_Copy(&sOdolwaDamageSfxPos, &this->actor.projectedPos);
 
-    play->envCtx.lightSetting = 0;
-    play->envCtx.prevLightSetting = 1;
-    Math_ApproachZeroF(&play->envCtx.lightBlend, 1.0f, 0.03f);
+    if (!this->fromBridge) {
+        play->envCtx.lightSetting = 0;
+        play->envCtx.prevLightSetting = 1;
+        Math_ApproachZeroF(&play->envCtx.lightBlend, 1.0f, 0.03f);
+    }
 
     this->frameCounter++;
 
@@ -2401,6 +2512,14 @@ void Boss01_Update(Actor* thisx, PlayState* play2) {
     if (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) {
         Math_ApproachZeroF(&this->additionalVelocityX, 1.0f, 1.0f);
         Math_ApproachZeroF(&this->additionalVelocityZ, 1.0f, 1.0f);
+    }
+
+    // 2S2H [HiveShock] La velocidad extra de los saltos y ataques se suma a la posición sin comprobar paredes (en la
+    // arena no hay), y en el aire no se frena: contra una pared Odolwa quedaba pegado empujando. Al tocarla se anula.
+    if (this->fromBridge && (this->actor.bgCheckFlags & BGCHECKFLAG_WALL)) {
+        this->additionalVelocityX = 0.0f;
+        this->additionalVelocityZ = 0.0f;
+        this->actor.speed = 0.0f;
     }
 
     this->actor.shape.rot = this->actor.world.rot;

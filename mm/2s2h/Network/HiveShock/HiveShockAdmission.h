@@ -74,6 +74,11 @@ constexpr bool CanAdmitSlots(Lane lane, int alive, int inScene, int maxAlive, in
     return alive < Max(1, maxAlive - slots) && inScene < Max(1, maxScene - slots);
 }
 
+// Jefes (Odolwa, Majora): como mucho uno vivo a la vez, además de las reglas de carril. Los demás esperan en la cola.
+constexpr bool CanAdmitBoss(int bossesAlive) {
+    return bossesAlive == 0;
+}
+
 // ---- Checks (MaxLoad 14, elite bank 10, no floor) ---------------------------------------------------------------
 namespace Checks {
 constexpr Config kBank{ 14, 10, 0 };
@@ -111,6 +116,12 @@ static_assert(!CanAdmit(Lane::Ordinary, 6, Loads{ 6, 4 }, kNoBank));
 // An enemy heavier than everything is still allowed alone.
 static_assert(CanAdmit(Lane::Elite, 40, Loads{ 0, 0 }, kBank));
 static_assert(CanAdmit(Lane::Ordinary, 40, Loads{ 0, 0 }, kBank));
+
+// Un jefe (peso 8 o 10) cabe en el banco élite aunque el pool ordinario esté lleno; solo uno a la vez.
+static_assert(CanAdmit(Lane::Elite, 8, Loads{ 14, 0 }, kBank));
+static_assert(CanAdmit(Lane::Elite, 10, Loads{ 14, 0 }, kBank));
+static_assert(CanAdmitBoss(0));
+static_assert(!CanAdmitBoss(1));
 
 static_assert(EliteSlots(10, 3) == 4);
 static_assert(EliteSlots(0, 3) == 0);

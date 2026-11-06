@@ -295,6 +295,10 @@ typedef struct Boss07 {
     /* 0xAC10 */ UNK_TYPE1 unkAC10[4];
     /* 0xAC14 */ f32 subCamEyeModY;
     /* 0xAC18 */ UNK_TYPE1 unkAC18[8];
-} Boss07; // size = 0xAC20
+    // 2S2H [HiveShock] Solo para la fase Wrath creada por HiveShock: pelea en cualquier escena.
+    u8 fromBridge;
+    f32 arenaX; // centro de la "arena" (donde nació); en la pelea normal es (0, 0)
+    f32 arenaZ;
+} Boss07;
 
 #endif // Z_BOSS_07_H

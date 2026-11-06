@@ -9,6 +9,7 @@
 #include "2s2h/Enhancements/FrameInterpolation/FrameInterpolation.h"
 
 #include "2s2h/GameInteractor/GameInteractor.h"
+#include "2s2h/Network/HiveShock/HiveShock.h"
 
 #define FLAGS                                                                                                        \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_HOOKSHOT_PULLS_ACTOR | ACTOR_FLAG_IGNORE_QUAKE | \
@@ -175,7 +176,10 @@ void EnThiefbird_Init(Actor* thisx, PlayState* play) {
         return;
     }
 
-    if (STOLEN_ITEM_1 != STOLEN_ITEM_NONE) {
+    // 2S2H [HiveShock] Un Takkuri de HiveShock pelea aunque ya haya robado uno (no roba nada, ver más abajo).
+    this->fromBridge = HiveShock_IsSpawningActor() ? 1 : 0;
+
+    if (!this->fromBridge && STOLEN_ITEM_1 != STOLEN_ITEM_NONE) {
         Actor_Kill(&this->actor);
         return;
     }
@@ -579,7 +583,8 @@ void func_80C1193C(EnThiefbird* this, PlayState* play) {
             this->collider.base.atFlags &= ~AT_HIT;
             Actor_PlaySfx(&this->actor, NA_SE_EN_THIEFBIRD_VOICE);
             if (!(this->collider.base.atFlags & AT_BOUNCED)) {
-                if (D_80C1392C && (CUR_UPG_VALUE(UPG_QUIVER) != 0) &&
+                // 2S2H [HiveShock] Sin robo real para los de HiveShock: el golpe se queda en daño.
+                if (!this->fromBridge && D_80C1392C && (CUR_UPG_VALUE(UPG_QUIVER) != 0) &&
                     ((STOLEN_ITEM_1 == STOLEN_ITEM_NONE) || (STOLEN_ITEM_2 == STOLEN_ITEM_NONE)) &&
                     GameInteractor_Should(VB_THIEF_BIRD_STEAL, Rand_ZeroOne() < 0.5f) && func_80C10B0C(this, play)) {
                     func_80C1242C(this);

@@ -8,6 +8,7 @@
 #include "overlays/actors/ovl_En_Clear_Tag/z_en_clear_tag.h"
 #include "overlays/actors/ovl_En_Arrow/z_en_arrow.h"
 #include "overlays/effects/ovl_Effect_Ss_Hitmark/z_eff_ss_hitmark.h"
+#include "2s2h/Network/HiveShock/HiveShock.h"
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -326,9 +327,27 @@ void EnKaizoku_Init(Actor* thisx, PlayState* play) {
     this->bodyCollider.dim.height = 65;
     this->bodyCollider.dim.yShift = 0;
     this->csId = this->picto.actor.csId;
-    this->picto.actor.world.pos.y = player->actor.world.pos.y + 160.0f;
+    this->fromBridge = HiveShock_IsSpawningActor() ? 1 : 0;
     this->picto.validationFunc = EnKaizoku_ValidatePictograph;
     this->picto.actor.flags |= ACTOR_FLAG_HOOKSHOT_PULLS_PLAYER;
+
+    if (this->fromBridge) {
+        // 2S2H [HiveShock] Pelea directa: sin caída desde arriba, sin diálogo ni cutscene, sin música propia (el
+        // Destroy no restaura música que no guardó). Misma preparación que el salto de cutscenes (SkipEnemyCutscenes).
+        this->cutsceneState = 0;
+        this->picto.actor.flags &= ~(ACTOR_FLAG_FREEZE_EXCEPTION | ACTOR_FLAG_LOCK_ON_DISABLED);
+        this->picto.actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
+        this->picto.actor.draw = EnKaizoku_Draw;
+        this->picto.actor.gravity = -2.0f;
+        this->swordScaleRight.x = this->swordScaleRight.y = this->swordScaleRight.z = 1.0f;
+        this->swordScaleLeft.x = this->swordScaleLeft.y = this->swordScaleLeft.z = 1.0f;
+        this->animationsDisabled = false;
+        this->subCamId = SUB_CAM_ID_DONE;
+        EnKaizoku_SetupReady(this);
+        return;
+    }
+
+    this->picto.actor.world.pos.y = player->actor.world.pos.y + 160.0f;
     EnKaizoku_SetupWaitForApproach(this);
 }
 
@@ -338,7 +357,9 @@ void EnKaizoku_Destroy(Actor* thisx, PlayState* play) {
     Effect_Destroy(play, this->blureIndex);
     Collider_DestroyCylinder(play, &this->bodyCollider);
     Collider_DestroyQuad(play, &this->swordCollider);
-    Audio_RestorePrevBgm();
+    if (!this->fromBridge) {
+        Audio_RestorePrevBgm();
+    }
 }
 
 s32 EnKaizoku_DodgeRanged(EnKaizoku* this, PlayState* play) {
@@ -1705,6 +1726,13 @@ void EnKaizoku_Damaged(EnKaizoku* this, PlayState* play) {
 void EnKaizoku_SetupDefeatKnockdown(EnKaizoku* this, PlayState* play) {
     Vec3f sp24;
 
+    // 2S2H [HiveShock] Sin cutscene de victoria (mueve a Link y usa una cámara): cae y desaparece.
+    if (this->fromBridge) {
+        Actor_PlaySfx(&this->picto.actor, NA_SE_EN_PIRATE_DEAD);
+        Actor_Kill(&this->picto.actor);
+        return;
+    }
+
     this->picto.actor.flags |= ACTOR_FLAG_FREEZE_EXCEPTION;
     Matrix_RotateYS(this->picto.actor.yawTowardsPlayer, MTXMODE_NEW);
     Matrix_MultVecZ(-10.0f, &sp24);
@@ -1809,7 +1837,9 @@ void EnKaizoku_UpdateDamage(EnKaizoku* this, PlayState* play) {
     }
 
     if (!(this->swordCollider.base.atFlags & AT_BOUNCED) && (this->swordCollider.base.atFlags & AT_HIT)) {
-        if ((gSaveContext.save.saveInfo.playerData.health <= 0x10) && (this->action != KAIZOKU_ACTION_SCENE_FADE)) {
+        // 2S2H [HiveShock] Sin secuencia de derrota del jugador (acaba en otra escena): con poca vida el daño ya es 0.
+        if (!this->fromBridge && (gSaveContext.save.saveInfo.playerData.health <= 0x10) &&
+            (this->action != KAIZOKU_ACTION_SCENE_FADE)) {
             this->spinAttackState = 2;
             this->subCamId = SUB_CAM_ID_DONE;
             this->picto.actor.flags |= ACTOR_FLAG_FREEZE_EXCEPTION;
@@ -1827,7 +1857,8 @@ void EnKaizoku_UpdateDamage(EnKaizoku* this, PlayState* play) {
                    (this->swordCollider.base.at == &GET_PLAYER(play)->actor)) {
             func_800B8D98(play, &this->picto.actor, 3.0f, this->picto.actor.yawTowardsPlayer, 1.0f);
             Health_ChangeBy(play, -0xC);
-            if ((gSaveContext.save.saveInfo.playerData.health <= 0x10) && (this->action != KAIZOKU_ACTION_SCENE_FADE)) {
+            if (!this->fromBridge && (gSaveContext.save.saveInfo.playerData.health <= 0x10) &&
+                (this->action != KAIZOKU_ACTION_SCENE_FADE)) {
                 Health_ChangeBy(play, 0x10);
                 this->spinAttackState = 2;
                 this->subCamId = SUB_CAM_ID_DONE;

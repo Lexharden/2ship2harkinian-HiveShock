@@ -58,6 +58,7 @@ typedef struct EnDeath {
     /* 0x808 */ ColliderSphere coreCollider;
     /* 0x860 */ ColliderTris weaponSpinningCollider;
     /* 0x880 */ ColliderTrisElement weaponSpinningColliderElements[2];
-} EnDeath; // size = 0x938
+    u8 fromBridge; // 2S2H [HiveShock] creado por HiveShock: sin intro, sin cutscene de muerte, sin luces de la escena
+} EnDeath;
 
 #endif // Z_EN_DEATH_H

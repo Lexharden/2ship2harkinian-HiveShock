@@ -134,6 +134,9 @@ void RegisterSkipEnemyIntros() {
     // Gerudo Pirate
     COND_ID_HOOK(OnActorInit, ACTOR_EN_KAIZOKU, CVAR, [](Actor* actor) {
         EnKaizoku* enKaizoku = (EnKaizoku*)actor;
+        if (enKaizoku->fromBridge) {
+            return; // HiveShock: ya salió preparado para pelear y sin música propia
+        }
         if ((enKaizoku->switchFlag > SWITCH_FLAG_NONE) && Flags_GetSwitch(gPlayState, enKaizoku->switchFlag)) {
             // Pirate already defeated, don't do anything
             return;

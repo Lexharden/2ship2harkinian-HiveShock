@@ -3,6 +3,23 @@
 All notable changes to 2Ship-HiveShock. Format based on [Keep a Changelog](https://keepachangelog.com/).
 Each `## [vX.Y.Z]` section is published as the release notes of that tag.
 
+## [Unreleased]
+
+### Added
+- New spawns: `nejiron`, `dodongo`, `takkuri`, `death_armos`, `gerudo_pirate` (`kaizoku`), `gomess` and the boss
+  `odolwa` and `majora` (only Majora's Wrath, the final phase; one boss at a time). They fight without intro cutscenes,
+  rewards or save changes. Majora's Wrath treats its spawn point as the arena centre and defeating it does not start
+  the credits.
+- `spawn_unavailable` event when a spawn cannot be placed repeatedly; retries now slow down instead of every second.
+- `HiveShock_IsSpawningActor()` so actors can tell they were created by HiveShock without extra bits in `params`.
+
+### Changed
+- `time_skip` on the final day no longer stops at ~00:09:00: crossing the dawn brings the moon down.
+- The `0x4000` aggro bit is only added to the actors that read it; the new spawns keep their `params` untouched.
+
+### Fixed
+- Going to the title screen no longer sends a `spawn_queue` event and a capacity snapshot on every frame.
+
 ## [v1.0.1] - 2026-10-26
 
 ### Fixed

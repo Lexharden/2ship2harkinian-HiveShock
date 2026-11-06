@@ -25,7 +25,14 @@ Works on Windows, Linux and macOS.
 
 `enemy`/`like_like`, `guay`, `keese`, `fire_keese`, `ice_keese`, `chuchu`, `redead`, `wolfos`, `stalchild`, `bubble`,
 `skulltula`, `bat`, `tektite`, `freezard`, `cucco`, `dinolfos`, `iron_knuckle`, `garo`, `garo_master`, `wallmaster`,
-`floormaster`, `eyegore`, `fairy`, `bombchu`, plus `random_enemy` and `cucco_army`. `{"action":"spawn","enemy":"wolfos"}`
+`floormaster`, `eyegore`, `nejiron`, `dodongo`, `takkuri`, `death_armos`, `gerudo_pirate` (alias `kaizoku`), `gomess`,
+`odolwa`, `majora` (alias `majoras_mask`; only the final Wrath phase), `fairy`, `bombchu`, plus `random_enemy` and
+`cucco_army`.
+`gerudo_pirate`, `gomess` and `death_armos` are elite enemies. `odolwa` and `majora` are bosses: only one boss can be alive at a time
+(the rest wait in the queue). HiveShock bosses and these enemies fight anywhere, without intro cutscenes and without
+rewards or save changes (no Heart Container, no blue warp, no stolen items from `takkuri`). `random_enemy` does not pick
+the new enemies. If an enemy's data does not fit in the scene's object space, its spawn keeps waiting with growing
+retry intervals and the companion gets a `spawn_unavailable` event. `{"action":"spawn","enemy":"wolfos"}`
 (also `name` / `actor` / `type`) is equivalent to `{"action":"wolfos"}`.
 
 Spawns never run immediately: they go to a queue that survives scene changes, death and the title screen, and is saved
@@ -59,14 +66,16 @@ Dangerous effects wait while Link cannot fight (cutscene, shop, minigame, horse,
 
 ### Time and world
 
-`freeze_time`, `resume_time`, `time_skip`, `time_up` (`times_up`, `time_zero`: moon crash), `warp` / `warp_random` /
+`freeze_time`, `resume_time`, `time_skip` (+6 h; a skip that crosses the dawn of the final day brings the moon down
+instead of stopping at 00:09:00), `time_up` (`times_up`, `time_zero`: moon crash), `warp` / `warp_random` /
 `warp_<owl>` (owl statue warps), `delete_save` (`new_run`).
 
 ## Events sent to the companion (port 43002)
 
 `player_death` / reset events (`deaths`), `capacity` (`used`, `max`, `queued`), `slot_freed` (`count`),
 `spawn_queue` (`pending`, `active`, `load`, `max`, `eliteLoad`, `eliteReserve`, `eliteWaiting`) and `spawn_rejected`
-(queue full: the new spawn is refused, older ones are kept).
+(queue full: the new spawn is refused, older ones are kept) and `spawn_unavailable` (`action`, `user`: a spawn has failed
+10 times, e.g. its object does not fit in the scene; it stays queued and keeps retrying more slowly).
 
 ## CVars
 

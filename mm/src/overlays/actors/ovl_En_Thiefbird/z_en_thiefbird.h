@@ -38,6 +38,7 @@ typedef struct EnThiefbird {
     /* 0x144 */ SkelAnime skelAnime;
     /* 0x188 */ EnThiefbirdActionFunc actionFunc;
     /* 0x18C */ u8 drawDmgEffType;
+    /* 0x18D */ u8 fromBridge; // 2S2H [HiveShock] creado por HiveShock: no roba objetos del save
     /* 0x18E */ s16 unk_18E;
     /* 0x190 */ s16 unk_190;
     /* 0x192 */ s16 unk_192;

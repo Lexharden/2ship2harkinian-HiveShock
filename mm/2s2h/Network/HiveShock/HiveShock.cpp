@@ -154,6 +154,7 @@ constexpr u32 kOrdinaryWaitLogTicks = 200;
 // Cadencia de reintento de un spawn retenido (no permitido ahora) o que no pudo colocar un actor.
 constexpr u32 kHeldRecheckFrames = 10;
 constexpr u32 kFailedRetryFrames = 20;
+constexpr u32 kUnavailableAttempts = 10; // intentos fallidos tras los que se avisa con "spawn_unavailable"
 // Tras un cambio de sala, los enemigos inyectados que desaparecen aún vivos los quitó el cambio de sala (no murieron),
 // así que se reencolan.
 constexpr u32 kRoomGraceTicks = 40;
@@ -561,6 +562,11 @@ struct SpawnDef {
     s16 rotX;
     f32 yOffset;
     u8 weight; // cuánto del presupuesto MaxLoad usa una instancia viva (0 = gratis: fairy, bombchu)
+    // true = se le suma kBridgeForceAggroParam (bit 0x4000) a params. Los actores cuyo params es un valor entero
+    // (path, tipo, variante) lo desactivan: el bit les corrompería el valor. Esos actores detectan el spawn con
+    // HiveShock_IsSpawningActor().
+    bool aggroBit = true;
+    bool boss = false; // jefe: como mucho uno vivo a la vez (ver HiveShockAdmission::CanAdmitBoss)
 };
 
 constexpr SpawnDef kSpawnTable[] = {
@@ -590,6 +596,21 @@ constexpr SpawnDef kSpawnTable[] = {
     { "eyegore", ACTOR_EN_EGOL, OBJECT_EG, 0x1FFF, 0, 0.0f, 4 }, // sin path/switch (parche en EnEgol)
     { "fairy", ACTOR_EN_ELF, -1, 1, 0, 30.0f, 0 },
     { "bombchu", ACTOR_EN_BOM_CHU, -1, 0, 0, 0.0f, 0 },
+    // Etapa 2 — params sin el bit 0x4000 (aggroBit = false): su params es un valor entero.
+    { "nejiron", ACTOR_EN_BAGUO, OBJECT_GMO, 0, 0, 0.0f, 2, false },
+    { "dodongo", ACTOR_EN_DODONGO, OBJECT_DODONGO, 0, 0, 0.0f, 2, false }, // params 0 = normal (otro valor = grande)
+    { "takkuri", ACTOR_EN_THIEFBIRD, OBJECT_THIEFBIRD, 0, 0, 50.0f, 1, false }, // params 1 = marcador, nunca usar
+    { "death_armos", ACTOR_EN_FAMOS, OBJECT_FAMOS, 0xFF, 0, 0.0f, 3, false },   // 0xFF = sin path
+    // Fighter pirate (En_Kaizoku): 0x1FC0 = sin switch (bits 6-12 a 0x7F); salida 0. Ver el parche fromBridge.
+    { "gerudo_pirate", ACTOR_EN_KAIZOKU, OBJECT_KZ, 0x1FC0, 0, 0.0f, 3, false },
+    { "kaizoku", ACTOR_EN_KAIZOKU, OBJECT_KZ, 0x1FC0, 0, 0.0f, 3, false }, // alias de gerudo_pirate
+    // Gomess (En_Death): pelea directa con bridge (sin intro, sin luces de Ikana Castle). Nace a ras de suelo.
+    { "gomess", ACTOR_EN_DEATH, OBJECT_DEATH, 0, 0, 0.0f, 4, false },
+    // Jefes: como mucho uno vivo a la vez. Pelean sin recompensas ni cambios en el save (ver los parches fromBridge).
+    { "odolwa", ACTOR_BOSS_01, OBJECT_BOSS01, 0, 0, 0.0f, 8, false, true }, // params 0 = ODOLWA_TYPE_ODOLWA
+    // Solo la fase final (Majora's Wrath, tipo 30): sin las fases Mask/Incarnation ni el manejador de batalla.
+    { "majora", ACTOR_BOSS_07, OBJECT_BOSS07, 30, 0, 0.0f, 10, false, true },
+    { "majoras_mask", ACTOR_BOSS_07, OBJECT_BOSS07, 30, 0, 0.0f, 10, false, true }, // alias de majora
 };
 
 constexpr const char* kRandomEnemies[] = {
@@ -639,6 +660,8 @@ u32 gLastEliteWaitLogTick = 0;
 u32 gLastOrdinaryWaitLogTick = 0;
 u32 gRoomGraceUntilTick = 0;
 s16 gLastRoom = -1;
+bool gSpawningActor = false; // true solo mientras SpawnActorInAnyRoom llama a Actor_Spawn (ver HiveShock.h)
+bool gTitleResetDone = false; // el reinicio del seguimiento al volver al título ya se hizo (una vez por visita)
 bool gBacklogDirty = false;
 bool gBacklogLoaded = false;
 u32 gLastBacklogSaveTick = 0;
@@ -1749,6 +1772,17 @@ const char* NoRoomReason(const SpawnDef& def) {
         return nullptr;
     }
     const HiveShockAdmission::Lane lane = LaneOf(def);
+    if (def.boss) {
+        s32 bossesAlive = 0;
+        for (const TrackedEnemy& t : gTrackedEnemies) {
+            if (t.def != nullptr && t.def->boss) {
+                bossesAlive++;
+            }
+        }
+        if (!HiveShockAdmission::CanAdmitBoss(bossesAlive)) {
+            return "a boss is already alive";
+        }
+    }
     const HiveShockAdmission::Config config = AdmissionConfig();
     const s32 eliteSlots = HiveShockAdmission::EliteSlots(config.eliteReserve, kEliteWeight);
     if (!HiveShockAdmission::CanAdmitSlots(lane, CountLiveTrackedEnemies(), CountSceneEnemies(), GetMaxAlive(),
@@ -1882,7 +1916,10 @@ Actor* SpawnActorInAnyRoom(s16 actorId, f32 x, f32 y, f32 z, s16 rotX, s16 rotY,
         Flags_UnsetClear(gPlayState, roomNum);
     }
 
+    // Init corre dentro de Actor_Spawn: durante esta llamada HiveShock_IsSpawningActor() devuelve 1.
+    gSpawningActor = true;
     Actor* spawned = Actor_Spawn(&gPlayState->actorCtx, gPlayState, actorId, x, y, z, rotX, rotY, rotZ, params);
+    gSpawningActor = false;
 
     if (wasCleared) {
         Flags_SetClear(gPlayState, roomNum);
@@ -1986,7 +2023,7 @@ ApplyResult SpawnDefNow(const SpawnDef& def, const std::string& user, s16 yawOff
     FindSpawnPosition(def, player, yawOffset, radius, pos);
 
     s16 faceYaw = Math_Vec3f_Yaw(&pos, &player->actor.world.pos);
-    s32 params = def.params | kBridgeForceAggroParam;
+    s32 params = def.aggroBit ? (def.params | kBridgeForceAggroParam) : def.params;
     Actor* spawned = SpawnActorInAnyRoom(def.actorId, pos.x, pos.y, pos.z, def.rotX, faceYaw, 0, params);
     if (spawned == nullptr) {
         // Alternativa junto a Link si el punto elegido no vale para Actor_Spawn.
@@ -2332,7 +2369,14 @@ void TickPendingSpawns() {
                         SPDLOG_WARN("HiveShock: could not place '{}' (attempt {}), will retry [{}]", it->name,
                                     it->attempts, DescribeCapacity());
                     }
-                    it->earliestTick = gTick + kFailedRetryFrames;
+                    // Un spawn que no cabe (p. ej. un object grande en una escena pequeña) reintenta cada vez más
+                    // despacio. Nunca se descarta: sigue valiendo si Link pasa a otra escena. El companion se entera.
+                    if (it->attempts == kUnavailableAttempts) {
+                        SendEventToBridge({ { "event", "spawn_unavailable" }, { "action", it->name }, { "user", it->user } });
+                    }
+                    it->earliestTick = gTick + (it->attempts < 5    ? kFailedRetryFrames
+                                                 : it->attempts < 15 ? kFailedRetryFrames * 5
+                                                                     : kFailedRetryFrames * 20);
                     ++it;
                     break;
                 case ApplyResult::Rejected:
@@ -2605,6 +2649,8 @@ void ApplyInvert(const json& cmd) {
     SPDLOG_INFO("HiveShock: inverted controls for {:.1f}s", duration);
 }
 
+void ApplyTimeUp();
+
 void ApplyTimeSkip() {
     if (gPlayState == nullptr) {
         return;
@@ -2627,8 +2673,10 @@ void ApplyTimeSkip() {
             gWeatherMode = WEATHER_MODE_CLEAR;
             gPlayState->envCtx.lightningState = LIGHTNING_OFF;
         } else {
-            // Día 3: no saltar más allá del amanecer final (evita bucle / saltar la luna).
-            UpdateGameTime(MORNING_TIME - (kTimeSkipInterval / 10));
+            // Día 3: el salto agota el tiempo que quedaba, así que cae la luna (en vez de quedarse en ~00:09:00).
+            ApplyTimeUp();
+            SPDLOG_INFO("HiveShock: time skip crossed the final dawn, moon crash queued");
+            return;
         }
     } else {
         UpdateGameTime(newTime);
@@ -2828,6 +2876,10 @@ extern "C" int HiveShock_ShouldBlockHealthLoss(void) {
     return ShouldBlockHealthLoss() ? 1 : 0;
 }
 
+extern "C" int HiveShock_IsSpawningActor(void) {
+    return gSpawningActor ? 1 : 0;
+}
+
 extern "C" int HiveShock_OverrideColorFilter(Actor* actor, void* colorRgba8) {
     return OverrideColorFilter(actor, static_cast<Color_RGBA8*>(colorRgba8)) ? 1 : 0;
 }
@@ -2926,13 +2978,19 @@ void RegisterHiveShock() {
             // Título / selección de archivo: los enemigos vivos ya no están, pero ellos y los spawns que pagaron los
             // espectadores siguen en la cola.
             gLastRoom = -1;
-            ResetBridgeActorTracking();
+            // Solo una vez al entrar al título: repetirlo cada frame fuerza un spawn_queue y un snapshot de capacidad
+            // en cada update (un hilo y una conexión TCP por evento).
+            if (!gTitleResetDone) {
+                gTitleResetDone = true;
+                ResetBridgeActorTracking();
+            }
             UpdateStatsSnapshot();
             TickQueueReport();
             TickBacklogPersistence();
             return;
         }
 
+        gTitleResetDone = false;
         const s16 room = gPlayState->roomCtx.curRoom.num;
         if (room != gLastRoom) {
             if (gLastRoom != -1) {

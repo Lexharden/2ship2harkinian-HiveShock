@@ -47,6 +47,10 @@ extern "C" {
 // ApplyInstaKill escribe health=0 directo y no pasa por aquí.
 int HiveShock_ShouldBlockHealthLoss(void);
 
+// 1 solo mientras HiveShock está creando un actor (se consulta desde su Init). Permite a los actores saber que los
+// creó HiveShock sin pasar bits extra en params, que en muchos actores es un valor entero.
+int HiveShock_IsSpawningActor(void);
+
 // colorRgba8 = Color_RGBA8*. 1 si se sustituye el tinte de buff.
 int HiveShock_OverrideColorFilter(struct Actor* actor, void* colorRgba8);
 

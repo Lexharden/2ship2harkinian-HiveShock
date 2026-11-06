@@ -30,6 +30,7 @@
 #include "2s2h/BenPort.h"
 #include "2s2h/Enhancements/FrameInterpolation/FrameInterpolation.h"
 #include "2s2h/GameInteractor/GameInteractor.h"
+#include "2s2h/Network/HiveShock/HiveShock.h"
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -1531,12 +1532,22 @@ void Boss07_Init(Actor* thisx, PlayState* play2) {
     Actor_SetScale(&this->actor, 0.01f);
     this->subCamId = this->actor.shape.rot.z;
 
+    // 2S2H [HiveShock] Wrath creado por HiveShock: sin intro, sin música propia, y la "arena" es donde nace.
+    this->fromBridge = HiveShock_IsSpawningActor() ? 1 : 0;
+    this->arenaX = this->fromBridge ? this->actor.world.pos.x : 0.0f;
+    this->arenaZ = this->fromBridge ? this->actor.world.pos.z : 0.0f;
+    if (this->fromBridge) {
+        this->subCamId = SUB_CAM_ID_DONE;
+    }
+
     if (this->subCamId != SUB_CAM_ID_DONE) {
         Boss07_Wrath_SetupIntroCutscene(this, play);
     } else {
         Boss07_Wrath_SetupIdle(this, play, 50);
         this->whipLengthScale = 1.0f;
-        SEQCMD_PLAY_SEQUENCE(SEQ_PLAYER_BGM_MAIN, 0, NA_BGM_MAJORAS_WRATH | SEQ_FLAG_ASYNC);
+        if (!this->fromBridge) {
+            SEQCMD_PLAY_SEQUENCE(SEQ_PLAYER_BGM_MAIN, 0, NA_BGM_MAJORAS_WRATH | SEQ_FLAG_ASYNC);
+        }
     }
 
     SkelAnime_InitFlex(play, &this->skelAnime, &gMajorasWrathSkel, &gMajorasWrathIdleAnim, this->jointTable,
@@ -1577,6 +1588,10 @@ void Boss07_Init(Actor* thisx, PlayState* play2) {
 void Boss07_Destroy(Actor* thisx, PlayState* play2) {
     PlayState* play = play2;
     Boss07* this = (Boss07*)thisx;
+
+    if (this->actor.params == MAJORA_TYPE_WRATH && this->fromBridge && sMajorasWrath == this) {
+        sMajorasWrath = NULL; // 2S2H [HiveShock] sin punteros globales colgando tras morir
+    }
 
     switch (this->actor.params) {
         //! @bug this should be MAJORAS_MASK
@@ -1750,6 +1765,29 @@ void Boss07_Wrath_IntroCutscene(Boss07* this, PlayState* play) {
 
 void Boss07_Wrath_SetupDeathCutscene(Boss07* this, PlayState* play) {
     s32 i;
+
+    if (this->fromBridge) {
+        // 2S2H [HiveShock] La cutscene de muerte necesita el manejador de batalla y acaba en los créditos
+        // (nextEntrance Termina Field + 0xFFF7). Aquí cae sin cutscene, sin créditos y sin marcar el final del juego.
+        Actor* actor;
+        Actor* next;
+
+        Actor_PlaySfx(&this->actor, NA_SE_EN_LAST3_DEAD_ROD);
+        for (actor = play->actorCtx.actorLists[ACTORCAT_BOSS].first; actor != NULL; actor = next) {
+            next = actor->next;
+            if ((actor->id == ACTOR_BOSS_07) && (actor != &this->actor)) {
+                Actor_Kill(actor); // el trompo que lanza y demás partes
+            }
+        }
+        for (actor = play->actorCtx.actorLists[ACTORCAT_ENEMY].first; actor != NULL; actor = next) {
+            next = actor->next;
+            if ((actor->id == ACTOR_BOSS_07) && (actor != &this->actor)) {
+                Actor_Kill(actor);
+            }
+        }
+        Actor_Kill(&this->actor);
+        return;
+    }
 
     SEQCMD_STOP_SEQUENCE(SEQ_PLAYER_BGM_MAIN, 1);
     Boss07_MovePlayerFromCenter(play);
@@ -2110,7 +2148,9 @@ void Boss07_Wrath_StartJump(Boss07* this, PlayState* play) {
 
     if (this->frameCounter == 1) {
         this->actor.velocity.y = 35.0f;
-        this->actor.world.rot.y = Math_Atan2F_XY(-this->actor.world.pos.z, -this->actor.world.pos.x) * (0x8000 / M_PIf);
+        this->actor.world.rot.y =
+            Math_Atan2F_XY(this->arenaZ - this->actor.world.pos.z, this->arenaX - this->actor.world.pos.x) *
+            (0x8000 / M_PIf); // 2S2H [HiveShock] hacia el centro de la arena (0, 0 en la pelea normal)
         this->actionFunc = Boss07_Wrath_Jump;
         this->actor.speed = 20.0f;
     }
@@ -2140,8 +2180,8 @@ void Boss07_Wrath_SetupFlip(Boss07* this, PlayState* play) {
 
     this->actionFunc = Boss07_Wrath_Flip;
     this->actor.velocity.y = 25.0f;
-    direction.x = 0.0f - this->actor.world.pos.x;
-    direction.z = 0.0f - this->actor.world.pos.z;
+    direction.x = this->arenaX - this->actor.world.pos.x;
+    direction.z = this->arenaZ - this->actor.world.pos.z;
 
     yawDiff = this->actor.yawTowardsPlayer - (s16)(Math_Atan2F_XY(direction.z, direction.x) * (0x8000 / M_PIf));
     if (yawDiff < 0) {
@@ -2193,8 +2233,8 @@ void Boss07_Wrath_SetupSidestep(Boss07* this, PlayState* play) {
 
     this->actionFunc = Boss07_Wrath_Sidestep;
     Animation_MorphToLoop(&this->skelAnime, &gMajorasWrathSidestepAnim, -5.0f);
-    direction.x = -this->actor.world.pos.x;
-    direction.z = -this->actor.world.pos.z;
+    direction.x = this->arenaX - this->actor.world.pos.x;
+    direction.z = this->arenaZ - this->actor.world.pos.z;
     yawDiff = this->actor.yawTowardsPlayer - (s16)(Math_Atan2F_XY(direction.z, direction.x) * (0x8000 / M_PIf));
     Matrix_RotateYS(this->actor.shape.rot.y, MTXMODE_NEW);
 
@@ -2295,6 +2335,8 @@ void Boss07_Wrath_SetupAttack(Boss07* this, PlayState* play) {
             Animation_MorphToPlayOnce(&this->skelAnime, &gMajorasWrathSpinAttackAnim, -5.0f);
             this->animEndFrame = Animation_GetLastFrame(&gMajorasWrathSpinAttackAnim);
             Boss07_RandXZ(&this->targetPos, 650.0f);
+            this->targetPos.x += this->arenaX; // 2S2H [HiveShock] relativo al centro de la arena
+            this->targetPos.z += this->arenaZ;
             this->speedToTarget = 0.0f;
             break;
 
@@ -3148,10 +3190,14 @@ void Boss07_Wrath_Update(Actor* thisx, PlayState* play2) {
     s32 i;
     Player* player = GET_PLAYER(play);
 
-    play->envCtx.lightSetting = 2;
-    play->envCtx.prevLightSetting = 0;
+    if (!this->fromBridge) { // 2S2H [HiveShock] sin tocar la iluminación de la escena
+        play->envCtx.lightSetting = 2;
+        play->envCtx.prevLightSetting = 0;
+    }
     this->actor.hintId = TATL_HINT_ID_MAJORAS_WRATH;
-    Math_ApproachF(&play->envCtx.lightBlend, 0.0f, 1.0f, 0.03f);
+    if (!this->fromBridge) {
+        Math_ApproachF(&play->envCtx.lightBlend, 0.0f, 1.0f, 0.03f);
+    }
     this->shouldUpdateTentaclesOrWhips = true;
     Math_Vec3f_Copy(&sMajoraSfxPos, &this->actor.projectedPos);
 
@@ -3272,6 +3318,11 @@ void Boss07_Wrath_Update(Actor* thisx, PlayState* play2) {
 
     if ((this->landSfxTimer == 1) || (this->landSfxTimer == 4)) {
         Actor_PlaySfx(&this->actor, NA_SE_EN_LAST2_WALK2_OLD);
+    }
+
+    // 2S2H [HiveShock] Estos límites son de la arena de Majora (coordenadas absolutas): fuera de ella no se aplican.
+    if (this->fromBridge) {
+        return;
     }
 
     if ((player->actor.world.pos.y > 100.0f) && (player->actor.world.pos.z < (KREG(82) + -850.0f))) {

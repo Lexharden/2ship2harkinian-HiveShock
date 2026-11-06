@@ -9,6 +9,16 @@
 #include "overlays/actors/ovl_Arrow_Light/z_arrow_light.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
 #include "2s2h/Enhancements/FrameInterpolation/FrameInterpolation.h"
+#include "2s2h/Network/HiveShock/HiveShock.h"
+
+// 2S2H [HiveShock] Los ajustes de luz 20-28 son de la escena de Gomess (Ikana Castle): en otra escena el índice se
+// sale de lightSettingsList. Un Gomess de HiveShock no toca la iluminación.
+#define EN_DEATH_SET_LIGHT(this, play, value)                  \
+    do {                                                       \
+        if (!(this)->fromBridge) {                             \
+            (play)->envCtx.lightSettingOverride = (value);     \
+        }                                                      \
+    } while (0)
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -249,7 +259,9 @@ void EnDeath_Init(Actor* thisx, PlayState* play2) {
 
     Effect_Add(play, &this->effectIndex, EFFECT_BLURE2, 0, 0, &sBlureInit);
 
-    if (!CHECK_EVENTINF(EVENTINF_INTRO_CS_WATCHED_GOMESS)) {
+    this->fromBridge = HiveShock_IsSpawningActor() ? 1 : 0;
+
+    if (!this->fromBridge && !CHECK_EVENTINF(EVENTINF_INTRO_CS_WATCHED_GOMESS)) {
         this->actor.world.pos.y += 400.0f;
     }
 
@@ -273,8 +285,8 @@ void EnDeath_Init(Actor* thisx, PlayState* play2) {
     this->bodyMatAnim = Lib_SegmentedToVirtual(&gGomessBodyMatAnim);
     this->coreMatAnim = Lib_SegmentedToVirtual(&gGomessCoreMatAnim);
 
-    if (CHECK_EVENTINF(EVENTINF_INTRO_CS_WATCHED_GOMESS)) {
-        // Watched intro cutscene
+    if (this->fromBridge || CHECK_EVENTINF(EVENTINF_INTRO_CS_WATCHED_GOMESS)) {
+        // Watched intro cutscene (o creado por HiveShock: pelea directa)
         this->holdsScythe = true;
         Actor_SetScale(&this->actor, 0.01f);
         this->matAnimStep = 23;
@@ -464,7 +476,7 @@ void EnDeath_IntroCutscenePart2(EnDeath* this, PlayState* play) {
     }
     if (this->actionTimer <= 0) {
         if (this->actor.world.pos.y < (this->actor.home.pos.y + 400.0f) - 225.0f) {
-            play->envCtx.lightSettingOverride = 26;
+            EN_DEATH_SET_LIGHT(this, play, 26);
         }
         Math_Vec3f_StepTo(&camera->eye, &this->camEyeTarget, this->camEyeSpeed);
         Math_Vec3f_StepTo(&camera->at, &this->camAtTarget, this->camAtSpeed);
@@ -567,9 +579,9 @@ void EnDeath_IntroCutscenePart5(EnDeath* this, PlayState* play) {
     f32 scale;
 
     if (Animation_OnFrame(&this->skelAnime, 12.0f)) {
-        play->envCtx.lightSettingOverride = 27;
+        EN_DEATH_SET_LIGHT(this, play, 27);
     } else if (Animation_OnFrame(&this->skelAnime, 25.0f)) {
-        play->envCtx.lightSettingOverride = 26;
+        EN_DEATH_SET_LIGHT(this, play, 26);
     } else if (Animation_OnFrame(&this->skelAnime, 38.0f)) {
         s32 i;
 
@@ -625,7 +637,7 @@ void EnDeath_SetupApproachPlayer(EnDeath* this) {
 
 void EnDeath_ApproachPlayer(EnDeath* this, PlayState* play) {
     if (play->envCtx.lightSettingOverride == 20) {
-        play->envCtx.lightSettingOverride = 26;
+        EN_DEATH_SET_LIGHT(this, play, 26);
     }
     EnDeath_Float(this);
     SkelAnime_Update(&this->skelAnime);
@@ -935,7 +947,7 @@ void EnDeath_DeathCutscenePart2(EnDeath* this, PlayState* play) {
         }
     }
     if (this->actionTimer < -25) {
-        play->envCtx.lightSettingOverride = 20;
+        EN_DEATH_SET_LIGHT(this, play, 20);
         EnDeath_SetupDeathCutscenePart3(this);
     }
 }
@@ -1063,11 +1075,13 @@ void EnDeath_DeathCutscenePart4(EnDeath* this, PlayState* play) {
 }
 
 void EnDeath_SetupDead(EnDeath* this, PlayState* play) {
-    CutsceneManager_Stop(this->actor.csId);
-    Player_SetCsAction(play, &this->actor, PLAYER_CSACTION_END);
-    Flags_SetClearTemp(play, play->roomCtx.curRoom.num);
+    if (!this->fromBridge) {
+        CutsceneManager_Stop(this->actor.csId);
+        Player_SetCsAction(play, &this->actor, PLAYER_CSACTION_END);
+        Flags_SetClearTemp(play, play->roomCtx.curRoom.num);
+    }
     this->actionTimer = 255;
-    play->envCtx.lightSettingOverride = 255;
+    EN_DEATH_SET_LIGHT(this, play, 255);
     this->actionFunc = EnDeath_Dead;
 }
 
@@ -1101,7 +1115,7 @@ void EnDeath_StartBatSwarm(EnDeath* this, PlayState* play) {
     Math_StepToF(&this->actor.world.pos.y, this->actor.home.pos.y, 5.0f);
 
     if (SkelAnime_Update(&this->skelAnime)) {
-        play->envCtx.lightSettingOverride = 27;
+        EN_DEATH_SET_LIGHT(this, play, 27);
         EnDeath_SetupBatSwarm(this);
     }
 }
@@ -1124,7 +1138,7 @@ void EnDeath_BatSwarm(EnDeath* this, PlayState* play) {
     SkelAnime_Update(&this->skelAnime);
 
     if (this->actor.params >= 5) {
-        play->envCtx.lightSettingOverride = 26;
+        EN_DEATH_SET_LIGHT(this, play, 26);
         EnDeath_SetupApproachPlayer(this);
     }
 }
@@ -1158,9 +1172,11 @@ void EnDeath_SetupBeginWithoutCutscene(EnDeath* this) {
 
 void EnDeath_BeginWithoutCutscene(EnDeath* this, PlayState* play) {
     if (!Play_InCsMode(play)) {
-        EnDeath_DimLights(play);
+        if (!this->fromBridge) {
+            EnDeath_DimLights(play);
+            Audio_PlayBgm_StorePrevBgm(NA_BGM_MINI_BOSS);
+        }
         this->coreCollider.base.acFlags |= AC_ON;
-        Audio_PlayBgm_StorePrevBgm(NA_BGM_MINI_BOSS);
         EnDeath_SetupApproachPlayer(this);
     }
 }
@@ -1202,7 +1218,7 @@ void EnDeath_UpdateDamage(EnDeath* this, PlayState* play) {
                 for (i = 0; i < ARRAY_COUNT(this->miniDeaths); i++) {
                     this->miniDeaths[i]->actor.params = MINIDEATH_ACTION_SCATTER;
                 }
-                play->envCtx.lightSettingOverride = 28;
+                EN_DEATH_SET_LIGHT(this, play, 28);
 
                 this->lightArrowDamageTimer = 20;
                 if (this->actionFunc == EnDeath_ApproachPlayer) {
@@ -1225,11 +1241,16 @@ void EnDeath_UpdateDamage(EnDeath* this, PlayState* play) {
                             0, 0, 4);
             }
             if (play->envCtx.lightSettingOverride == 27) {
-                play->envCtx.lightSettingOverride = 26;
+                EN_DEATH_SET_LIGHT(this, play, 26);
             }
             this->actor.shape.rot.x = 0;
 
             if (Actor_ApplyDamage(&this->actor) == 0) {
+                if (this->fromBridge) {
+                    // 2S2H [HiveShock] Sin cutscene de muerte (necesita un csId y una cámara): se desvanece directo.
+                    EnDeath_SetupDeathCutscenePart3(this);
+                    return;
+                }
                 Enemy_StartFinishingBlow(play, &this->actor);
                 Audio_RestorePrevBgm(); // Stop miniboss BGM
                 EnDeath_SetupPlayCutscene(this);
@@ -1257,7 +1278,7 @@ void EnDeath_Update(Actor* thisx, PlayState* play) {
         }
 
         if (this->lightArrowDamageTimer == 0) {
-            play->envCtx.lightSettingOverride = 26;
+            EN_DEATH_SET_LIGHT(this, play, 26);
         }
     }
 

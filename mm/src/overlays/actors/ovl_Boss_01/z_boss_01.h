@@ -150,6 +150,7 @@ typedef struct Boss01 {
     /* 0xAD8 */ u8 drawDmgEffType; 
     /* 0xAD9 */ u8 drawDmgEffState;
     /* 0xADA */ s16 drawDmgEffTimer;
-} Boss01; // size = 0xADC
+    u8 fromBridge; // 2S2H [HiveShock] creado por HiveShock: pelea en cualquier escena, sin intro ni recompensas
+} Boss01;
 
 #endif // Z_BOSS_01_H
